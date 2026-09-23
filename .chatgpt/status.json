@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "working",
-  "task": "Repair diagnostic transfer crashes and Wi-Fi Direct regression",
-  "summary": "v0.3.59 gzip-compresses and paces encrypted log transfer with progress, isolates transfer failure from call recovery, embeds saved video profiles, records privacy-safe crash fingerprints, and repairs Wi-Fi Direct optional permission/startup/retry races. CI is next.",
-  "updated_at": "2026-09-23T17:44:00Z",
-  "artifact": "QuietLink v0.3.59"
+  "status": "partial",
+  "task": "Validate repaired log transfer and Wi-Fi Direct",
+  "summary": "v0.3.59 built, signed, tested, and published successfully. Human validation now needed: SEND LOG + PROFILES on both phones with visible progress/no crash, then no-router Wi-Fi Direct CODE with optional P2P permission granted. If Wi-Fi Direct still fails, the new privacy-safe P2P events should identify the failure stage.",
+  "updated_at": "2026-09-23T17:47:00Z",
+  "artifact": "QuietLink v0.3.59 APK"
 }
