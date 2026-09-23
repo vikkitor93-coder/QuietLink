@@ -4,8 +4,8 @@ Updated: **2026-09-23**
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.59 / versionCode 71**  
-Latest release CI: **passed**
+Current release: **v0.3.60 / versionCode 72**  
+Latest release CI: **pending v0.3.60 validation**
 
 ---
 
@@ -162,6 +162,22 @@ Internet-path recovery still needs to become transport-independent.
 ---
 
 # 6. Online P2P work completed
+
+
+## v0.3.60 — Local export of diagnostic log + calibration profiles
+
+User request:
+- Make log/profile export available from chat as well as Developer tools so calibration offsets can be sent back even when peer file transfer is unreliable.
+- Use those exact offsets later to trace the underlying rotation/aspect-transform issue.
+
+Implemented:
+- Chat: EXPORT LOG + PROFILES and EXPORT PROFILES.
+- Developer tools: Export log + profiles (.txt) and Export profiles only (.txt).
+- Both are local Android document exports and do not use QuietLink networking.
+- Profile-only report includes display rotation, reported local/remote stream rotations, resolved local/remote rotations, current tuning summary, and all four saved profile slots.
+- Combined QuietLog export embeds the same calibration report before trace events.
+- Privacy exclusions remain unchanged.
+
 
 
 ## v0.3.59 — Diagnostic transfer crash repair + Wi-Fi Direct regression repair
@@ -833,20 +849,17 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: human reliability retest of v0.3.59
+## Primary next checkpoint: collect exact transform evidence from both phones
 
-After v0.3.59 CI passes:
-1. Update both phones through CHECK UPDATE.
-2. Recreate a normal live connection and open chat on Phone A.
-3. Tap **SEND LOG + PROFILES**. Watch the small sender progress bar and verify neither phone/app/service crashes or reconnects.
-4. Phone B should show receive progress and then one normal **QuietLink-diagnostic-log.txt** attachment.
-5. Open it and confirm it contains a **Saved video calibration profiles** section. No separate profile message is required unless the user wants one.
-6. Repeat Phone B -> Phone A, especially from the older/poor-link phone.
-7. If anything crashes, reopen QuietLink and export/send the surviving diagnostic file; v0.3.59 now records a privacy-safe uncaught exception class + QuietLink site/line.
-8. Wi-Fi Direct test: Wi-Fi radio ON on both phones, not joined to the same router, no manually-created hotspot. Grant the optional Nearby Wi-Fi/legacy Location permission when prompted.
-9. For a clean P2P-only proof, make the internet path unavailable for the test. HOST/JOIN the same six-digit CODE and wait beyond the ~8-second fallback point. Expected status should progress through Wi-Fi Direct search/group/link and then normal QL5 connection.
-10. If Wi-Fi Direct still fails, SEND LOG + PROFILES after the attempt; new P2P diagnostic events expose privacy-safe state/failure reason/attempt data without MAC/IP/code.
-11. Once log transfer and P2P are stable, continue calibration profile collection and then decide whether to promote proven settings or begin canonical CameraX/EGL video normalization.
+After v0.3.60 CI passes:
+1. Update both phones.
+2. Save the working VIDEO INLINE and VIDEO FULLSCREEN profiles on each phone; save Baby profiles too if they differ.
+3. From chat or Developer tools choose **EXPORT PROFILES** and send those .txt files back to the AI.
+4. If a session/network failure is also relevant, export **LOG + PROFILES** from the same phone.
+5. Compare display rotation, reported stream rotation, resolved rotation, sender formula/source, Window 1/2 offsets and aspect choices across old/new phones and inline/fullscreen.
+6. Use that evidence to identify whether the systematic error is camera sensor/display math, encode orientation metadata, TextureView presentation, or a double transform.
+7. Do not promote manual offsets to production defaults until the common underlying rule is understood.
+8. Continue v0.3.59 SEND LOG + PROFILES and Wi-Fi Direct validation in parallel.
 
 ---
 
