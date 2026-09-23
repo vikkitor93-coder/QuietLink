@@ -97,6 +97,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     private TextView diagnosticsText;
     private LinearLayout chatMessageList;
     private ScrollView chatScroll;
+    private ProgressBar chatTransferProgress;
+    private TextView chatTransferStatus;
     private boolean wifiWarningDismissedThisForeground = false;
     private boolean restoringPersistedSession = false;
     private String lastDisconnectBanner = null;
@@ -3602,9 +3604,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         box.addView(note, lp(-1,-2,0,0,0,6));
 
         if (devUnlocked && !devDummySession) {
-            Button sendLog = secondary("📄 SEND MY LOG");
+            Button sendLog = secondary("📄 SEND LOG + PROFILES");
             sendLog.setTextSize(10);
-            sendLog.setContentDescription("Send this phone's privacy-safe diagnostic log as a text file");
+            sendLog.setContentDescription("Send this phone's privacy-safe diagnostic log and saved video profiles as a text file");
             sendLog.setOnClickListener(v -> {
                 try {
                     startService(new Intent(this, SessionService.class)
@@ -3614,7 +3616,19 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                             Toast.LENGTH_SHORT).show();
                 } catch (Exception ignored) {}
             });
-            box.addView(sendLog, lp(-1,dp(38),0,0,0,6));
+            box.addView(sendLog, lp(-1,dp(38),0,0,0,4));
+
+            chatTransferStatus = text("", 9, muted(), false);
+            chatTransferStatus.setVisibility(View.GONE);
+            box.addView(chatTransferStatus, lp(-1,-2,2,0,2,2));
+
+            chatTransferProgress = new ProgressBar(
+                    this, null, android.R.attr.progressBarStyleHorizontal);
+            chatTransferProgress.setMax(100);
+            chatTransferProgress.setProgress(0);
+            chatTransferProgress.setVisibility(View.GONE);
+            box.addView(chatTransferProgress, lp(-1,dp(6),2,0,2,6));
+            updateChatTransferProgress(SessionBus.fileTransferProgress());
         }
 
         chatScroll = new ScrollView(this);
@@ -3671,6 +3685,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             chatDialog = null;
             chatMessageList = null;
             chatScroll = null;
+            chatTransferProgress = null;
+            chatTransferStatus = null;
         });
         chatDialog.setOnShowListener(d -> renderChatMessages(
                 devDummySession ? new ArrayList<>(devChatMessages) : SessionBus.chatSnapshot()));
@@ -4759,6 +4775,45 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 updateChatButtonBadge();
             }
         });
+    }
+
+    @Override public void onFileTransferProgress(
+            SessionBus.FileTransferProgress progress) {
+        runOnUiThread(() -> updateChatTransferProgress(progress));
+    }
+
+    private void updateChatTransferProgress(
+            SessionBus.FileTransferProgress progress) {
+        if (chatTransferProgress == null || chatTransferStatus == null) return;
+        if (progress == null) {
+            chatTransferProgress.setVisibility(View.GONE);
+            chatTransferStatus.setVisibility(View.GONE);
+            return;
+        }
+
+        boolean show = progress.active
+                || (progress.label != null && !progress.label.isEmpty());
+        chatTransferProgress.setVisibility(show ? View.VISIBLE : View.GONE);
+        chatTransferStatus.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (!show) return;
+
+        chatTransferProgress.setProgress(progress.percent);
+        chatTransferStatus.setText(progress.label);
+        if (!progress.active) {
+            chatTransferProgress.postDelayed(() -> {
+                SessionBus.FileTransferProgress current =
+                        SessionBus.fileTransferProgress();
+                if (chatTransferProgress != null
+                        && current != null
+                        && !current.active
+                        && current.label.equals(progress.label)) {
+                    chatTransferProgress.setVisibility(View.GONE);
+                    if (chatTransferStatus != null) {
+                        chatTransferStatus.setVisibility(View.GONE);
+                    }
+                }
+            }, 2500L);
+        }
     }
 
     @Override public void onNearbyDevicesChanged(List<PeerDiscovery.Peer> peers) {
