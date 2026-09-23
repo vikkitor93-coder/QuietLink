@@ -13,9 +13,13 @@ import android.net.NetworkCapabilities;
 import android.net.wifi.WifiManager;
 import android.util.Base64;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -52,6 +56,7 @@ public final class SessionService extends Service {
     public static final String ACTION_APPLY_ROTATION_LAB = "is.quietlink.APPLY_ROTATION_LAB";
     public static final String ACTION_SWAP_BABY_ROLE = "is.quietlink.SWAP_BABY_ROLE";
     public static final String ACTION_SEND_CHAT = "is.quietlink.SEND_CHAT";
+    public static final String ACTION_SEND_DIAGNOSTIC_LOG = "is.quietlink.SEND_DIAGNOSTIC_LOG";
     public static final String ACTION_CHAT_READ = "is.quietlink.CHAT_READ";
     public static final String ACTION_RESTORE_SESSION = "is.quietlink.RESTORE_SESSION";
 
@@ -86,6 +91,8 @@ public final class SessionService extends Service {
     private static final long RECOVERY_CHECKPOINT_MAX_AGE_MS = 24L * 60L * 60L * 1000L;
     private static final long SERVICE_WATCHDOG_INTERVAL_MS = 5_000L;
     private static final String RECOVERY_PREF = "quietlink_recovery_checkpoint";
+    private static final int CHAT_FILE_CHUNK_BYTES = 4096;
+    private static final int CHAT_FILE_MAX_BYTES = 900 * 1024;
 
     private final ExecutorService io = Executors.newCachedThreadPool();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -165,6 +172,7 @@ public final class SessionService extends Service {
     private final AtomicBoolean serviceWatchdogStarted = new AtomicBoolean(false);
     private PowerManager.WakeLock babyWakeLock;
     private WifiManager.WifiLock babyWifiLock;
+    private IncomingTextFile incomingTextFile;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -228,6 +236,7 @@ public final class SessionService extends Service {
             babyStation = mode == MODE_BABY && host;
             code = intent.getStringExtra(EXTRA_CODE);
             SessionBus.clearChat();
+            incomingTextFile = null;
             SessionBus.active = true;
             SessionBus.code = code == null ? "" : code;
             SessionBus.peerName = "";
@@ -317,6 +326,8 @@ public final class SessionService extends Service {
         } else if (ACTION_SEND_CHAT.equals(action)) {
             String text = intent.getStringExtra(EXTRA_CHAT_TEXT);
             sendChat(text);
+        } else if (ACTION_SEND_DIAGNOSTIC_LOG.equals(action)) {
+            sendDiagnosticLogFile();
         } else if (ACTION_CHAT_READ.equals(action)) {
             SessionBus.markChatRead();
             cancelChatNotification();
@@ -1339,6 +1350,12 @@ public final class SessionService extends Service {
                     if (!(requested == MODE_BABY && host)) {
                         setSessionMode(requested, false);
                     }
+                } else if (c.startsWith("CHAT:FILE_BEGIN|")) {
+                    receiveTextFileBegin(c.substring("CHAT:FILE_BEGIN|".length()));
+                } else if (c.startsWith("CHAT:FILE_CHUNK|")) {
+                    receiveTextFileChunk(c.substring("CHAT:FILE_CHUNK|".length()));
+                } else if (c.startsWith("CHAT:FILE_END|")) {
+                    receiveTextFileEnd(c.substring("CHAT:FILE_END|".length()));
                 } else if (c.startsWith("CHAT:")) {
                     receiveChat(c.substring("CHAT:".length()));
                 } else if (c.startsWith("RESUME_CAP:")) {
@@ -2408,6 +2425,220 @@ public final class SessionService extends Service {
             SessionBus.chat(false, text);
             postChatNotification();
         } catch (Exception ignored) {}
+    }
+
+    private void sendDiagnosticLogFile() {
+        if (!established.get()) return;
+
+        final String text = QuietLog.exportText(this);
+        final byte[] data = text.getBytes(StandardCharsets.UTF_8);
+        if (data.length <= 0 || data.length > CHAT_FILE_MAX_BYTES) {
+            SessionBus.status("Diagnostic log is too large to send in chat");
+            return;
+        }
+
+        final String fileName = "QuietLink-diagnostic-log.txt";
+        final String transferId = Long.toHexString(System.nanoTime());
+        final String digest;
+        try {
+            digest = sha256Hex(data);
+        } catch (Exception e) {
+            SessionBus.status("Could not prepare diagnostic log");
+            return;
+        }
+
+        io.execute(() -> {
+            CryptoChannel ch = crypto;
+            if (ch == null || !established.get()) return;
+
+            File localCopy = null;
+            try {
+                File dir = new File(getCacheDir(), "chat_files");
+                if (!dir.exists() && !dir.mkdirs()) {
+                    throw new IOException("Could not create chat file cache");
+                }
+                localCopy = new File(dir, "sent-" + transferId + ".txt");
+                try (FileOutputStream out = new FileOutputStream(localCopy, false)) {
+                    out.write(data);
+                }
+
+                String encodedName = Base64.encodeToString(
+                        fileName.getBytes(StandardCharsets.UTF_8),
+                        Base64.NO_WRAP | Base64.URL_SAFE);
+                ch.sendControl("CHAT:FILE_BEGIN|" + transferId + "|"
+                        + encodedName + "|" + data.length + "|" + digest);
+
+                int chunks = 0;
+                for (int off = 0; off < data.length; off += CHAT_FILE_CHUNK_BYTES) {
+                    int len = Math.min(CHAT_FILE_CHUNK_BYTES, data.length - off);
+                    byte[] part = Arrays.copyOfRange(data, off, off + len);
+                    String encoded = Base64.encodeToString(
+                            part, Base64.NO_WRAP | Base64.URL_SAFE);
+                    ch.sendControl("CHAT:FILE_CHUNK|" + transferId + "|"
+                            + chunks + "|" + encoded);
+                    chunks++;
+                }
+                ch.sendControl("CHAT:FILE_END|" + transferId + "|" + chunks);
+
+                SessionBus.chatFile(true, fileName,
+                        localCopy.getAbsolutePath(), data.length);
+                QuietLog.log("CHAT", "diagnostic_file_sent",
+                        "bytes=" + data.length + " chunks=" + chunks);
+            } catch (Exception e) {
+                QuietLog.log("CHAT", "diagnostic_file_send_failed",
+                        "reason=" + e.getClass().getSimpleName());
+                SessionBus.status("Could not send diagnostic log");
+                if (localCopy != null) {
+                    try { localCopy.delete(); } catch (Exception ignored) {}
+                }
+            }
+        });
+    }
+
+    private void receiveTextFileBegin(String payload) {
+        try {
+            String[] parts = payload.split("\\|", 4);
+            if (parts.length != 4) throw new IOException("Invalid file header");
+
+            String id = safeTransferId(parts[0]);
+            byte[] nameBytes = Base64.decode(
+                    parts[1], Base64.NO_WRAP | Base64.URL_SAFE);
+            String name = sanitizeTextFileName(
+                    new String(nameBytes, StandardCharsets.UTF_8));
+            int expected = Integer.parseInt(parts[2]);
+            String digest = parts[3];
+
+            if (expected <= 0 || expected > CHAT_FILE_MAX_BYTES) {
+                throw new IOException("Invalid file size");
+            }
+            if (!digest.matches("[0-9a-f]{64}")) {
+                throw new IOException("Invalid file digest");
+            }
+
+            incomingTextFile = new IncomingTextFile(
+                    id, name, expected, digest);
+            QuietLog.log("CHAT", "diagnostic_file_begin",
+                    "bytes=" + expected);
+        } catch (Exception e) {
+            incomingTextFile = null;
+            QuietLog.log("CHAT", "diagnostic_file_rejected",
+                    "stage=begin");
+        }
+    }
+
+    private void receiveTextFileChunk(String payload) {
+        IncomingTextFile transfer = incomingTextFile;
+        if (transfer == null) return;
+
+        try {
+            String[] parts = payload.split("\\|", 3);
+            if (parts.length != 3) throw new IOException("Invalid file chunk");
+            if (!transfer.id.equals(parts[0])) throw new IOException("Wrong transfer");
+
+            int index = Integer.parseInt(parts[1]);
+            if (index != transfer.nextChunk) throw new IOException("Out of order");
+
+            byte[] chunk = Base64.decode(
+                    parts[2], Base64.NO_WRAP | Base64.URL_SAFE);
+            if (chunk.length <= 0
+                    || transfer.bytes.size() + chunk.length > transfer.expectedBytes
+                    || transfer.bytes.size() + chunk.length > CHAT_FILE_MAX_BYTES) {
+                throw new IOException("Invalid chunk size");
+            }
+
+            transfer.bytes.write(chunk);
+            transfer.nextChunk++;
+        } catch (Exception e) {
+            incomingTextFile = null;
+            QuietLog.log("CHAT", "diagnostic_file_rejected",
+                    "stage=chunk");
+        }
+    }
+
+    private void receiveTextFileEnd(String payload) {
+        IncomingTextFile transfer = incomingTextFile;
+        incomingTextFile = null;
+        if (transfer == null) return;
+
+        try {
+            String[] parts = payload.split("\\|", 2);
+            if (parts.length != 2 || !transfer.id.equals(parts[0])) {
+                throw new IOException("Invalid file end");
+            }
+            int chunks = Integer.parseInt(parts[1]);
+            if (chunks != transfer.nextChunk) throw new IOException("Chunk mismatch");
+
+            byte[] data = transfer.bytes.toByteArray();
+            if (data.length != transfer.expectedBytes) {
+                throw new IOException("File size mismatch");
+            }
+            if (!transfer.sha256.equals(sha256Hex(data))) {
+                throw new IOException("File digest mismatch");
+            }
+
+            File dir = new File(getCacheDir(), "chat_files");
+            if (!dir.exists() && !dir.mkdirs()) {
+                throw new IOException("Could not create chat file cache");
+            }
+            File file = new File(dir,
+                    "received-" + transfer.id + "-" + transfer.fileName);
+            try (FileOutputStream out = new FileOutputStream(file, false)) {
+                out.write(data);
+            }
+
+            SessionBus.chatFile(false, transfer.fileName,
+                    file.getAbsolutePath(), data.length);
+            postChatNotification();
+            QuietLog.log("CHAT", "diagnostic_file_received",
+                    "bytes=" + data.length + " chunks=" + chunks);
+        } catch (Exception e) {
+            QuietLog.log("CHAT", "diagnostic_file_rejected",
+                    "stage=end");
+        }
+    }
+
+    private static String safeTransferId(String value) throws IOException {
+        String id = value == null ? "" : value.trim();
+        if (!id.matches("[0-9a-f]{1,32}")) {
+            throw new IOException("Invalid transfer id");
+        }
+        return id;
+    }
+
+    private static String sanitizeTextFileName(String value) {
+        String name = value == null ? "" : value.trim();
+        name = name.replaceAll("[^A-Za-z0-9._-]", "_");
+        if (!name.toLowerCase(java.util.Locale.US).endsWith(".txt")) {
+            name += ".txt";
+        }
+        if (name.length() > 72) {
+            name = name.substring(0, 68) + ".txt";
+        }
+        return name.isEmpty() ? "QuietLink-log.txt" : name;
+    }
+
+    private static String sha256Hex(byte[] data) throws Exception {
+        byte[] digest = MessageDigest.getInstance("SHA-256").digest(data);
+        StringBuilder out = new StringBuilder(digest.length * 2);
+        for (byte b : digest) out.append(String.format(java.util.Locale.US, "%02x", b));
+        return out.toString();
+    }
+
+    private static final class IncomingTextFile {
+        final String id;
+        final String fileName;
+        final int expectedBytes;
+        final String sha256;
+        final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        int nextChunk = 0;
+
+        IncomingTextFile(String id, String fileName,
+                         int expectedBytes, String sha256) {
+            this.id = id;
+            this.fileName = fileName;
+            this.expectedBytes = expectedBytes;
+            this.sha256 = sha256;
+        }
     }
 
     private void setMicMuted(boolean muted) {
