@@ -13,6 +13,7 @@ import android.net.NetworkCapabilities;
 import android.net.wifi.WifiManager;
 import android.util.Base64;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -25,6 +26,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
 
 public final class SessionService extends Service {
     public static final String ACTION_HOST = "is.quietlink.HOST";
@@ -93,6 +96,7 @@ public final class SessionService extends Service {
     private static final String RECOVERY_PREF = "quietlink_recovery_checkpoint";
     private static final int CHAT_FILE_CHUNK_BYTES = 4096;
     private static final int CHAT_FILE_MAX_BYTES = 900 * 1024;
+    private static final int CHAT_FILE_WIRE_MAX_BYTES = 940 * 1024;
 
     private final ExecutorService io = Executors.newCachedThreadPool();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -1351,6 +1355,12 @@ public final class SessionService extends Service {
                     if (!(requested == MODE_BABY && host)) {
                         setSessionMode(requested, false);
                     }
+                } else if (c.startsWith("CHAT:FILE2_BEGIN|")) {
+                    receiveTextFileV2Begin(c.substring("CHAT:FILE2_BEGIN|".length()));
+                } else if (c.startsWith("CHAT:FILE2_CHUNK|")) {
+                    receiveTextFileV2Chunk(c.substring("CHAT:FILE2_CHUNK|".length()));
+                } else if (c.startsWith("CHAT:FILE2_END|")) {
+                    receiveTextFileV2End(c.substring("CHAT:FILE2_END|".length()));
                 } else if (c.startsWith("CHAT:FILE_BEGIN|")) {
                     receiveTextFileBegin(c.substring("CHAT:FILE_BEGIN|".length()));
                 } else if (c.startsWith("CHAT:FILE_CHUNK|")) {
@@ -2436,28 +2446,40 @@ public final class SessionService extends Service {
         }
 
         final String text = QuietLog.exportText(this);
-        final byte[] data = text.getBytes(StandardCharsets.UTF_8);
-        if (data.length <= 0 || data.length > CHAT_FILE_MAX_BYTES) {
+        final byte[] raw = text.getBytes(StandardCharsets.UTF_8);
+        if (raw.length <= 0 || raw.length > CHAT_FILE_MAX_BYTES) {
             chatFileSending.set(false);
+            SessionBus.fileTransferProgress(false, true, 0, "");
             SessionBus.status("Diagnostic log is too large to send in chat");
             return;
         }
 
         final String fileName = "QuietLink-diagnostic-log.txt";
         final String transferId = Long.toHexString(System.nanoTime());
-        final String digest;
+        final String rawDigest;
+        final byte[] wire;
         try {
-            digest = sha256Hex(data);
+            rawDigest = sha256Hex(raw);
+            wire = gzip(raw);
+            if (wire.length <= 0 || wire.length > CHAT_FILE_WIRE_MAX_BYTES) {
+                throw new IOException("Compressed log is too large");
+            }
         } catch (Exception e) {
             chatFileSending.set(false);
+            SessionBus.fileTransferProgress(false, true, 0, "");
             SessionBus.status("Could not prepare diagnostic log");
             return;
         }
+
+        SessionBus.fileTransferProgress(
+                true, true, 0,
+                "Sending diagnostic log • 0%");
 
         io.execute(() -> {
             CryptoChannel ch = crypto;
             if (ch == null || !established.get()) {
                 chatFileSending.set(false);
+                SessionBus.fileTransferProgress(false, true, 0, "");
                 return;
             }
 
@@ -2469,47 +2491,232 @@ public final class SessionService extends Service {
                 }
                 localCopy = new File(dir, "sent-" + transferId + ".txt");
                 try (FileOutputStream out = new FileOutputStream(localCopy, false)) {
-                    out.write(data);
+                    out.write(raw);
                 }
 
                 String encodedName = Base64.encodeToString(
                         fileName.getBytes(StandardCharsets.UTF_8),
                         Base64.NO_WRAP | Base64.URL_SAFE);
-                ch.sendControl("CHAT:FILE_BEGIN|" + transferId + "|"
-                        + encodedName + "|" + data.length + "|" + digest);
+
+                ch.sendControl("CHAT:FILE2_BEGIN|" + transferId + "|"
+                        + encodedName + "|" + raw.length + "|"
+                        + wire.length + "|" + rawDigest + "|GZIP");
 
                 int chunks = 0;
-                for (int off = 0; off < data.length; off += CHAT_FILE_CHUNK_BYTES) {
-                    int len = Math.min(CHAT_FILE_CHUNK_BYTES, data.length - off);
-                    byte[] part = Arrays.copyOfRange(data, off, off + len);
+                int lastPercent = -1;
+                for (int off = 0; off < wire.length; off += CHAT_FILE_CHUNK_BYTES) {
+                    if (!established.get() || stopped.get()) {
+                        throw new IOException("Session ended during file transfer");
+                    }
+
+                    int len = Math.min(CHAT_FILE_CHUNK_BYTES, wire.length - off);
+                    byte[] part = Arrays.copyOfRange(wire, off, off + len);
                     String encoded = Base64.encodeToString(
                             part, Base64.NO_WRAP | Base64.URL_SAFE);
-                    ch.sendControl("CHAT:FILE_CHUNK|" + transferId + "|"
+
+                    ch.sendControl("CHAT:FILE2_CHUNK|" + transferId + "|"
                             + chunks + "|" + encoded);
                     chunks++;
-                }
-                ch.sendControl("CHAT:FILE_END|" + transferId + "|" + chunks);
 
+                    int sent = off + len;
+                    int percent = Math.min(99,
+                            Math.max(1, (int)((sent * 100L) / wire.length)));
+                    if (percent != lastPercent
+                            && (lastPercent < 0 || percent >= lastPercent + 2)) {
+                        lastPercent = percent;
+                        SessionBus.fileTransferProgress(
+                                true, true, percent,
+                                "Sending diagnostic log • " + percent + "%");
+                    }
+
+                    // Do not hammer the latency-sensitive control socket with
+                    // hundreds of back-to-back flushes on weak links. A tiny
+                    // yield also gives heartbeat/control work a chance to run.
+                    if ((chunks & 3) == 0) {
+                        try { Thread.sleep(4L); }
+                        catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IOException("File transfer interrupted");
+                        }
+                    }
+                }
+
+                ch.sendControl("CHAT:FILE2_END|" + transferId + "|" + chunks);
                 SessionBus.chatFile(true, fileName,
-                        localCopy.getAbsolutePath(), data.length);
+                        localCopy.getAbsolutePath(), raw.length);
+                SessionBus.fileTransferProgress(
+                        false, true, 100,
+                        "Diagnostic log sent");
                 QuietLog.log("CHAT", "diagnostic_file_sent",
-                        "bytes=" + data.length + " chunks=" + chunks);
+                        "raw_bytes=" + raw.length
+                                + " wire_bytes=" + wire.length
+                                + " chunks=" + chunks
+                                + " encoding=gzip");
             } catch (Exception e) {
                 QuietLog.log("CHAT", "diagnostic_file_send_failed",
                         "reason=" + e.getClass().getSimpleName());
+                SessionBus.fileTransferProgress(
+                        false, true, 0,
+                        "Diagnostic log send failed");
                 SessionBus.status("Could not send diagnostic log");
                 if (localCopy != null) {
                     try { localCopy.delete(); } catch (Exception ignored) {}
                 }
-                if (established.get() && !stopped.get()) {
-                    handleConnectionLoss(peerLostReason("Connection lost"));
-                }
+                // Do NOT force the whole session into recovery because an
+                // optional diagnostic transfer failed. The normal control-loop
+                // / heartbeat path remains authoritative for connection loss.
             } finally {
                 chatFileSending.set(false);
             }
         });
     }
 
+    private void receiveTextFileV2Begin(String payload) {
+        try {
+            String[] parts = payload.split("\\|", 7);
+            if (parts.length != 7) throw new IOException("Invalid file2 header");
+
+            String id = safeTransferId(parts[0]);
+            byte[] nameBytes = Base64.decode(
+                    parts[1], Base64.NO_WRAP | Base64.URL_SAFE);
+            String name = sanitizeTextFileName(
+                    new String(nameBytes, StandardCharsets.UTF_8));
+            int rawBytes = Integer.parseInt(parts[2]);
+            int wireBytes = Integer.parseInt(parts[3]);
+            String digest = parts[4];
+            String encoding = parts[5];
+            String reserved = parts[6];
+
+            if (!"GZIP".equals(encoding) || !"V2".equals(reserved)) {
+                throw new IOException("Unsupported file encoding");
+            }
+            if (rawBytes <= 0 || rawBytes > CHAT_FILE_MAX_BYTES
+                    || wireBytes <= 0 || wireBytes > CHAT_FILE_WIRE_MAX_BYTES) {
+                throw new IOException("Invalid file2 size");
+            }
+            if (!digest.matches("[0-9a-f]{64}")) {
+                throw new IOException("Invalid file2 digest");
+            }
+
+            incomingTextFile = new IncomingTextFile(
+                    id, name, rawBytes, wireBytes, digest, true);
+            SessionBus.fileTransferProgress(
+                    true, false, 0,
+                    "Receiving diagnostic log • 0%");
+            QuietLog.log("CHAT", "diagnostic_file_begin",
+                    "raw_bytes=" + rawBytes
+                            + " wire_bytes=" + wireBytes
+                            + " encoding=gzip");
+        } catch (Exception e) {
+            incomingTextFile = null;
+            SessionBus.fileTransferProgress(
+                    false, false, 0,
+                    "Diagnostic log receive failed");
+            QuietLog.log("CHAT", "diagnostic_file_rejected",
+                    "stage=begin_v2");
+        }
+    }
+
+    private void receiveTextFileV2Chunk(String payload) {
+        IncomingTextFile transfer = incomingTextFile;
+        if (transfer == null || !transfer.gzip) return;
+
+        try {
+            String[] parts = payload.split("\\|", 3);
+            if (parts.length != 3) throw new IOException("Invalid file2 chunk");
+            if (!transfer.id.equals(parts[0])) throw new IOException("Wrong transfer");
+
+            int index = Integer.parseInt(parts[1]);
+            if (index != transfer.nextChunk) throw new IOException("Out of order");
+
+            byte[] chunk = Base64.decode(
+                    parts[2], Base64.NO_WRAP | Base64.URL_SAFE);
+            if (chunk.length <= 0
+                    || transfer.bytes.size() + chunk.length > transfer.expectedWireBytes
+                    || transfer.bytes.size() + chunk.length > CHAT_FILE_WIRE_MAX_BYTES) {
+                throw new IOException("Invalid file2 chunk size");
+            }
+
+            transfer.bytes.write(chunk);
+            transfer.nextChunk++;
+
+            int percent = Math.min(99,
+                    Math.max(1, (int)((transfer.bytes.size() * 100L)
+                            / transfer.expectedWireBytes)));
+            if (percent >= transfer.lastProgressPercent + 2
+                    || transfer.lastProgressPercent < 0) {
+                transfer.lastProgressPercent = percent;
+                SessionBus.fileTransferProgress(
+                        true, false, percent,
+                        "Receiving diagnostic log • " + percent + "%");
+            }
+        } catch (Exception e) {
+            incomingTextFile = null;
+            SessionBus.fileTransferProgress(
+                    false, false, 0,
+                    "Diagnostic log receive failed");
+            QuietLog.log("CHAT", "diagnostic_file_rejected",
+                    "stage=chunk_v2");
+        }
+    }
+
+    private void receiveTextFileV2End(String payload) {
+        IncomingTextFile transfer = incomingTextFile;
+        incomingTextFile = null;
+        if (transfer == null || !transfer.gzip) return;
+
+        try {
+            String[] parts = payload.split("\\|", 2);
+            if (parts.length != 2 || !transfer.id.equals(parts[0])) {
+                throw new IOException("Invalid file2 end");
+            }
+            int chunks = Integer.parseInt(parts[1]);
+            if (chunks != transfer.nextChunk) throw new IOException("Chunk mismatch");
+
+            byte[] wire = transfer.bytes.toByteArray();
+            if (wire.length != transfer.expectedWireBytes) {
+                throw new IOException("Compressed file size mismatch");
+            }
+
+            byte[] raw = gunzipBounded(wire, transfer.expectedBytes);
+            if (raw.length != transfer.expectedBytes) {
+                throw new IOException("File size mismatch");
+            }
+            if (!transfer.sha256.equals(sha256Hex(raw))) {
+                throw new IOException("File digest mismatch");
+            }
+
+            File dir = new File(getCacheDir(), "chat_files");
+            if (!dir.exists() && !dir.mkdirs()) {
+                throw new IOException("Could not create chat file cache");
+            }
+            File file = new File(dir,
+                    "received-" + transfer.id + "-" + transfer.fileName);
+            try (FileOutputStream out = new FileOutputStream(file, false)) {
+                out.write(raw);
+            }
+
+            SessionBus.chatFile(false, transfer.fileName,
+                    file.getAbsolutePath(), raw.length);
+            SessionBus.fileTransferProgress(
+                    false, false, 100,
+                    "Diagnostic log received");
+            postChatNotification();
+            QuietLog.log("CHAT", "diagnostic_file_received",
+                    "raw_bytes=" + raw.length
+                            + " wire_bytes=" + wire.length
+                            + " chunks=" + chunks
+                            + " encoding=gzip");
+        } catch (Exception e) {
+            SessionBus.fileTransferProgress(
+                    false, false, 0,
+                    "Diagnostic log receive failed");
+            QuietLog.log("CHAT", "diagnostic_file_rejected",
+                    "stage=end_v2");
+        }
+    }
+
+    // v0.3.58 compatibility receiver. New v0.3.59+ senders use FILE2/GZIP.
     private void receiveTextFileBegin(String payload) {
         try {
             String[] parts = payload.split("\\|", 4);
@@ -2531,11 +2738,17 @@ public final class SessionService extends Service {
             }
 
             incomingTextFile = new IncomingTextFile(
-                    id, name, expected, digest);
+                    id, name, expected, expected, digest, false);
+            SessionBus.fileTransferProgress(
+                    true, false, 0,
+                    "Receiving diagnostic log • 0%");
             QuietLog.log("CHAT", "diagnostic_file_begin",
-                    "bytes=" + expected);
+                    "bytes=" + expected + " encoding=plain_v1");
         } catch (Exception e) {
             incomingTextFile = null;
+            SessionBus.fileTransferProgress(
+                    false, false, 0,
+                    "Diagnostic log receive failed");
             QuietLog.log("CHAT", "diagnostic_file_rejected",
                     "stage=begin");
         }
@@ -2543,7 +2756,7 @@ public final class SessionService extends Service {
 
     private void receiveTextFileChunk(String payload) {
         IncomingTextFile transfer = incomingTextFile;
-        if (transfer == null) return;
+        if (transfer == null || transfer.gzip) return;
 
         try {
             String[] parts = payload.split("\\|", 3);
@@ -2563,8 +2776,22 @@ public final class SessionService extends Service {
 
             transfer.bytes.write(chunk);
             transfer.nextChunk++;
+
+            int percent = Math.min(99,
+                    Math.max(1, (int)((transfer.bytes.size() * 100L)
+                            / transfer.expectedBytes)));
+            if (percent >= transfer.lastProgressPercent + 2
+                    || transfer.lastProgressPercent < 0) {
+                transfer.lastProgressPercent = percent;
+                SessionBus.fileTransferProgress(
+                        true, false, percent,
+                        "Receiving diagnostic log • " + percent + "%");
+            }
         } catch (Exception e) {
             incomingTextFile = null;
+            SessionBus.fileTransferProgress(
+                    false, false, 0,
+                    "Diagnostic log receive failed");
             QuietLog.log("CHAT", "diagnostic_file_rejected",
                     "stage=chunk");
         }
@@ -2573,7 +2800,7 @@ public final class SessionService extends Service {
     private void receiveTextFileEnd(String payload) {
         IncomingTextFile transfer = incomingTextFile;
         incomingTextFile = null;
-        if (transfer == null) return;
+        if (transfer == null || transfer.gzip) return;
 
         try {
             String[] parts = payload.split("\\|", 2);
@@ -2603,13 +2830,53 @@ public final class SessionService extends Service {
 
             SessionBus.chatFile(false, transfer.fileName,
                     file.getAbsolutePath(), data.length);
+            SessionBus.fileTransferProgress(
+                    false, false, 100,
+                    "Diagnostic log received");
             postChatNotification();
             QuietLog.log("CHAT", "diagnostic_file_received",
-                    "bytes=" + data.length + " chunks=" + chunks);
+                    "bytes=" + data.length
+                            + " chunks=" + chunks
+                            + " encoding=plain_v1");
         } catch (Exception e) {
+            SessionBus.fileTransferProgress(
+                    false, false, 0,
+                    "Diagnostic log receive failed");
             QuietLog.log("CHAT", "diagnostic_file_rejected",
                     "stage=end");
         }
+    }
+
+    private static byte[] gzip(byte[] raw) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream(
+                Math.max(1024, raw.length / 3));
+        try (GZIPOutputStream gzip = new GZIPOutputStream(out)) {
+            gzip.write(raw);
+        }
+        return out.toByteArray();
+    }
+
+    private static byte[] gunzipBounded(byte[] wire, int expectedBytes)
+            throws IOException {
+        if (expectedBytes <= 0 || expectedBytes > CHAT_FILE_MAX_BYTES) {
+            throw new IOException("Invalid decompressed size");
+        }
+        ByteArrayOutputStream out = new ByteArrayOutputStream(expectedBytes);
+        byte[] buffer = new byte[8192];
+        int total = 0;
+        try (GZIPInputStream in = new GZIPInputStream(
+                new ByteArrayInputStream(wire))) {
+            int n;
+            while ((n = in.read(buffer)) >= 0) {
+                if (n == 0) continue;
+                total += n;
+                if (total > expectedBytes || total > CHAT_FILE_MAX_BYTES) {
+                    throw new IOException("Decompressed file too large");
+                }
+                out.write(buffer, 0, n);
+            }
+        }
+        return out.toByteArray();
     }
 
     private static String safeTransferId(String value) throws IOException {
@@ -2645,16 +2912,22 @@ public final class SessionService extends Service {
         final String id;
         final String fileName;
         final int expectedBytes;
+        final int expectedWireBytes;
         final String sha256;
+        final boolean gzip;
         final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         int nextChunk = 0;
+        int lastProgressPercent = -1;
 
         IncomingTextFile(String id, String fileName,
-                         int expectedBytes, String sha256) {
+                         int expectedBytes, int expectedWireBytes,
+                         String sha256, boolean gzip) {
             this.id = id;
             this.fileName = fileName;
             this.expectedBytes = expectedBytes;
+            this.expectedWireBytes = expectedWireBytes;
             this.sha256 = sha256;
+            this.gzip = gzip;
         }
     }
 
