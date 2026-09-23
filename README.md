@@ -1,4 +1,4 @@
-# QuietLink 0.3.56
+# QuietLink 0.3.57
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,30 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.57 numbered per-window video tuning
+- The compact video-tuning panel is now organized around the **two visible video windows**, rather than mixing unrelated sender/receiver/local/fullscreen controls.
+- Small developer-only badges identify the windows directly on the live call:
+  - **1 = MAIN / INCOMING**
+  - **2 = MINI / MY CAMERA**
+- The panel has a **Window 1 / Window 2 dropdown**. Only controls relevant to the selected window are shown.
+- **Window 1** controls:
+  - incoming rotation offset,
+  - incoming Direct/Inverse rotation direction,
+  - aspect ratio,
+  - per-frame rotation RX.
+  - Its aspect selection is kept consistent between inline and fullscreen because it is the same incoming video window.
+- **Window 2** controls:
+  - mini-preview rotation base,
+  - a new independent mini-preview +0/+90/+180/+270 offset,
+  - mini aspect ratio,
+  - mirror,
+  - clearly separated outbound-camera sender rotation/formula/source/per-frame TX controls.
+- Aspect choices now include **Auto, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 1:1, Stretch**.
+- Existing stored v0.3.56 aspect numeric values are preserved; new ratios were appended rather than re-numbering old preferences.
+- Explicit aspect choices now mean literal final **WIDTH:HEIGHT** after display rotation. Choosing 9:16 therefore stays 9:16 instead of being silently turned back into 16:9 after a quarter-turn.
+- Auto remains orientation-aware and uses the native H.264 16:9 / 9:16 shape according to the effective rotation.
+- v0.3.56 internet CODE, fullscreen ROTATE access, QL5, signing, updater and local-first behavior are unchanged.
 
 ## 0.3.56 internet CODE regression + fullscreen/aspect lab
 - Fixes a connection regression where **CODE** host/join was blocked unless `hasUsableLocalNetwork()` was true. CODE is transport-agnostic and can now start with Wi-Fi fully off, using mobile-data internet rendezvous/relay when available.
