@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "working",
-  "task": "Persist video calibration profiles and transfer diagnostics in chat",
-  "summary": "v0.3.58 makes aspect selection scrollable, adds auto-loading Video/Baby Inline/Fullscreen calibration profiles with copyable summaries, and sends privacy-safe diagnostic logs as encrypted .txt chat attachments. CI is next.",
-  "updated_at": "2026-09-23T16:52:00Z",
-  "artifact": "QuietLink v0.3.58"
+  "status": "partial",
+  "task": "Validate saved video profiles and encrypted diagnostic attachments",
+  "summary": "v0.3.58 built, signed, tested, and published successfully. Human validation now needed: scrollable aspect list, separate Video/Baby Inline/Fullscreen profile save+auto-load+copy, SEND MY LOG both directions, plus pending mobile-data CODE and Wi-Fi Direct fallback checks.",
+  "updated_at": "2026-09-23T17:18:00Z",
+  "artifact": "QuietLink v0.3.58 APK"
 }
