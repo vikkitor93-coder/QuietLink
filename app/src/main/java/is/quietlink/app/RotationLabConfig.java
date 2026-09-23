@@ -29,6 +29,13 @@ final class RotationLabConfig {
     static final int REMOTE_DIRECT = 0;
     static final int REMOTE_INVERSE = 1;
 
+    static final int ASPECT_AUTO = 0;
+    static final int ASPECT_16_9 = 1;
+    static final int ASPECT_4_3 = 2;
+    static final int ASPECT_3_2 = 3;
+    static final int ASPECT_1_1 = 4;
+    static final int ASPECT_STRETCH = 5;
+
     static final int PRESET_PRODUCTION = 0;
     static final int PRESET_ANDROID_TEXTUREVIEW = 1;
     static final int PRESET_WEBRTC = 2;
@@ -46,6 +53,9 @@ final class RotationLabConfig {
     private static final String KEY_REMOTE_MODE = "remote_mode";
     private static final String KEY_REMOTE_OFFSET = "remote_offset";
     private static final String KEY_FORCE_JPEG = "force_jpeg";
+    private static final String KEY_LOCAL_ASPECT = "local_aspect";
+    private static final String KEY_REMOTE_ASPECT = "remote_aspect";
+    private static final String KEY_FULLSCREEN_ASPECT = "fullscreen_aspect";
 
     private RotationLabConfig() {}
 
@@ -190,6 +200,71 @@ final class RotationLabConfig {
                 .apply();
     }
 
+    static int localAspect(Context context) {
+        return enabled(context)
+                ? clampAspect(prefs(context).getInt(KEY_LOCAL_ASPECT, ASPECT_AUTO))
+                : ASPECT_AUTO;
+    }
+
+    static void setLocalAspect(Context context, int value) {
+        prefs(context).edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putInt(KEY_LOCAL_ASPECT, clampAspect(value))
+                .apply();
+    }
+
+    static int remoteAspect(Context context) {
+        return enabled(context)
+                ? clampAspect(prefs(context).getInt(KEY_REMOTE_ASPECT, ASPECT_AUTO))
+                : ASPECT_AUTO;
+    }
+
+    static void setRemoteAspect(Context context, int value) {
+        prefs(context).edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putInt(KEY_REMOTE_ASPECT, clampAspect(value))
+                .apply();
+    }
+
+    static int fullscreenAspect(Context context) {
+        return enabled(context)
+                ? clampAspect(prefs(context).getInt(KEY_FULLSCREEN_ASPECT, ASPECT_AUTO))
+                : ASPECT_AUTO;
+    }
+
+    static void setFullscreenAspect(Context context, int value) {
+        prefs(context).edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putInt(KEY_FULLSCREEN_ASPECT, clampAspect(value))
+                .apply();
+    }
+
+    static float aspectRatio(int mode) {
+        switch (clampAspect(mode)) {
+            case ASPECT_4_3: return 4f / 3f;
+            case ASPECT_3_2: return 3f / 2f;
+            case ASPECT_1_1: return 1f;
+            case ASPECT_16_9:
+            case ASPECT_AUTO:
+            default: return 16f / 9f;
+        }
+    }
+
+    static boolean stretchAspect(int mode) {
+        return clampAspect(mode) == ASPECT_STRETCH;
+    }
+
+    static String aspectLabel(int mode) {
+        switch (clampAspect(mode)) {
+            case ASPECT_16_9: return "16:9";
+            case ASPECT_4_3: return "4:3";
+            case ASPECT_3_2: return "3:2";
+            case ASPECT_1_1: return "1:1";
+            case ASPECT_STRETCH: return "Stretch";
+            default: return "Auto";
+        }
+    }
+
     static void resetProduction(Context context) {
         prefs(context).edit().clear().apply();
     }
@@ -207,7 +282,10 @@ final class RotationLabConfig {
                 .putInt(KEY_FORCE_ROTATION, -1)
                 .putInt(KEY_REMOTE_MODE, REMOTE_DIRECT)
                 .putInt(KEY_REMOTE_OFFSET, 0)
-                .putBoolean(KEY_FORCE_JPEG, false);
+                .putBoolean(KEY_FORCE_JPEG, false)
+                .putInt(KEY_LOCAL_ASPECT, ASPECT_AUTO)
+                .putInt(KEY_REMOTE_ASPECT, ASPECT_AUTO)
+                .putInt(KEY_FULLSCREEN_ASPECT, ASPECT_AUTO);
 
         if (preset == PRESET_ANDROID_TEXTUREVIEW) {
             e.putInt(KEY_TX_FORMULA, TX_ANDROID_RELATIVE)
@@ -318,6 +396,9 @@ final class RotationLabConfig {
                 + " • force=" + forcedLabel(forcedTxRotation(context))
                 + " • remote=" + remoteModeLabel(remoteMode(context))
                 + "+" + remoteOffset(context)
+                + " • localAspect=" + aspectLabel(localAspect(context))
+                + " • remoteAspect=" + aspectLabel(remoteAspect(context))
+                + " • fullAspect=" + aspectLabel(fullscreenAspect(context))
                 + " • codec=" + (forceJpeg(context) ? "JPEG" : "AUTO");
     }
 
@@ -353,6 +434,10 @@ final class RotationLabConfig {
 
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static int clampAspect(int value) {
+        return clamp(value, ASPECT_AUTO, ASPECT_STRETCH);
     }
 
     private static int normalizeQuarter(int value) {

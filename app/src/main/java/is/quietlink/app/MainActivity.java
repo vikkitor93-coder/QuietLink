@@ -43,6 +43,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     private FrameLayout activeInlineVideoFrame;
     private LinearLayout floatingVideoControls;
     private View fullscreenBackButton;
+    private View fullscreenRotateButton;
     private final List<View> fullscreenHiddenViews = new ArrayList<>();
     private final List<Integer> fullscreenHiddenVisibility = new ArrayList<>();
     private LinearLayout.LayoutParams savedInlineVideoLayout;
@@ -232,17 +233,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             try { startService(new Intent(this, SessionService.class).setAction(SessionService.ACTION_REFRESH_ORIENTATION)); }
             catch (Exception ignored) {}
             if (Build.VERSION.SDK_INT < 26 || !isInPictureInPictureMode()) {
-                if (remoteVideoTexture != null) {
-                    remoteVideoTexture.post(() ->
-                            applyVideoTextureTransform(remoteVideoTexture,
-                                    SessionBus.remoteVideoRotation, false, false));
-                }
-                if (localVideoTexture != null) {
-                    localVideoTexture.post(() ->
-                            applyVideoTextureTransform(localVideoTexture,
-                                    SessionBus.localVideoRotation, true, false));
-                }
-                updateLocalPreviewLayout();
+                refreshVideoTransformsForCurrentLayout();
             }
         }
     }
@@ -961,8 +952,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         });
         header.addView(full, new LinearLayout.LayoutParams(dp(84),dp(34)));
 
-        Button close = secondary("✕");
-        close.setTextSize(13);
+        Button close = secondary("X");
+        close.setTextSize(12);
         close.setOnClickListener(v -> dialog.dismiss());
         LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(dp(42),dp(34));
         closeLp.setMargins(dp(5),0,0,0);
@@ -1014,6 +1005,24 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 new String[]{"DISPLAY","PHYSICAL"},
                 RotationLabConfig.rotationSource(this),
                 index -> RotationLabConfig.setRotationSource(this, index),
+                dialog);
+
+        addQuickRotationChoices(box, "LOCAL ASPECT",
+                new String[]{"AUTO","16:9","4:3","3:2","1:1","STRETCH"},
+                RotationLabConfig.localAspect(this),
+                index -> RotationLabConfig.setLocalAspect(this, index),
+                dialog);
+
+        addQuickRotationChoices(box, "REMOTE ASPECT",
+                new String[]{"AUTO","16:9","4:3","3:2","1:1","STRETCH"},
+                RotationLabConfig.remoteAspect(this),
+                index -> RotationLabConfig.setRemoteAspect(this, index),
+                dialog);
+
+        addQuickRotationChoices(box, "FULLSCREEN ASPECT",
+                new String[]{"AUTO","16:9","4:3","3:2","1:1","STRETCH"},
+                RotationLabConfig.fullscreenAspect(this),
+                index -> RotationLabConfig.setFullscreenAspect(this, index),
                 dialog);
 
         LinearLayout toggles = row();
@@ -1124,6 +1133,12 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 "Remote rotation offset • +" + RotationLabConfig.remoteOffset(this) + "°",
                 "Video codec test • "
                         + (RotationLabConfig.forceJpeg(this) ? "FORCE JPEG" : "AUTO / H.264"),
+                "Local preview aspect • "
+                        + RotationLabConfig.aspectLabel(RotationLabConfig.localAspect(this)),
+                "Remote inline aspect • "
+                        + RotationLabConfig.aspectLabel(RotationLabConfig.remoteAspect(this)),
+                "Fullscreen remote aspect • "
+                        + RotationLabConfig.aspectLabel(RotationLabConfig.fullscreenAspect(this)),
                 "Show test instructions",
                 "Reset production defaults"
         };
@@ -1200,7 +1215,22 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                                 this, !RotationLabConfig.forceJpeg(this));
                         applyRotationLabNow();
                         showVideoRotationLab();
-                    } else if (which == 11) {
+                    } else if (which == 11) showRotationLabChoice(
+                            "Local preview aspect",
+                            new String[] {"Auto", "16:9", "4:3", "3:2", "1:1", "Stretch"},
+                            RotationLabConfig.localAspect(this),
+                            index -> RotationLabConfig.setLocalAspect(this, index));
+                    else if (which == 12) showRotationLabChoice(
+                            "Remote inline aspect",
+                            new String[] {"Auto", "16:9", "4:3", "3:2", "1:1", "Stretch"},
+                            RotationLabConfig.remoteAspect(this),
+                            index -> RotationLabConfig.setRemoteAspect(this, index));
+                    else if (which == 13) showRotationLabChoice(
+                            "Fullscreen remote aspect",
+                            new String[] {"Auto", "16:9", "4:3", "3:2", "1:1", "Stretch"},
+                            RotationLabConfig.fullscreenAspect(this),
+                            index -> RotationLabConfig.setFullscreenAspect(this, index));
+                    else if (which == 14) {
                         showRotationLabInstructions();
                     } else {
                         RotationLabConfig.resetProduction(this);
@@ -1266,6 +1296,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                         + " remote_offset=" + RotationLabConfig.remoteOffset(this)
                         + " frame_tx=" + (RotationLabConfig.sendFrameRotation(this) ? 1 : 0)
                         + " frame_rx=" + (RotationLabConfig.acceptFrameRotation(this) ? 1 : 0)
+                        + " local_aspect=" + RotationLabConfig.localAspect(this)
+                        + " remote_aspect=" + RotationLabConfig.remoteAspect(this)
+                        + " fullscreen_aspect=" + RotationLabConfig.fullscreenAspect(this)
                         + " jpeg=" + (RotationLabConfig.forceJpeg(this) ? 1 : 0));
 
         if (SessionBus.active && !devDummySession) {
@@ -1275,17 +1308,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             } catch (Exception ignored) {}
         }
 
-        if (remoteVideoTexture != null) {
-            remoteVideoTexture.post(() ->
-                    applyVideoTextureTransform(remoteVideoTexture,
-                            SessionBus.remoteVideoRotation, false, false));
-        }
-        if (localVideoTexture != null) {
-            localVideoTexture.post(() ->
-                    applyVideoTextureTransform(localVideoTexture,
-                            SessionBus.localVideoRotation, true, false));
-        }
-        updateLocalPreviewLayout();
+        refreshVideoTransformsForCurrentLayout();
         updateH264PictureInPictureAspect();
     }
 
@@ -1823,7 +1846,17 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         boolean hotspot = isHotspotLocalNetwork();
         boolean needsSharedNetwork = selectedJoinTab == TAB_NEARBY || selectedJoinTab == TAB_KNOWN;
 
-        if (hotspot || (wifiEnabled && (onWifi || !needsSharedNetwork))) {
+        // CODE can work over mobile data / internet and must never be blocked
+        // or nagged into Wi-Fi/hotspot merely because no local network exists.
+        if (!needsSharedNetwork) {
+            if (wifiDialog != null) {
+                wifiDialog.dismiss();
+                wifiDialog = null;
+            }
+            return;
+        }
+
+        if (hotspot || (wifiEnabled && onWifi)) {
             if (wifiDialog != null) {
                 wifiDialog.dismiss();
                 wifiDialog = null;
@@ -1856,7 +1889,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     if (needsSharedNetwork) renderJoinTabContent();
                 });
 
-        if (wifiEnabled && !onWifi && needsSharedNetwork) {
+        if (needsSharedNetwork) {
             builder.setNeutralButton("Use Code", (dialog, which) -> {
                 wifiWarningDismissedThisForeground = true;
                 selectJoinTab(TAB_CODE);
@@ -1898,10 +1931,12 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     }
 
     private void startRequested(boolean host, String code, int requestedMode) {
-        if (!hasUsableLocalNetwork()) {
-            maybeShowWifiWarning(true);
-            return;
-        }
+        // CODE is transport-agnostic. It may use LAN/hotspot first, then the
+        // production internet rendezvous/relay path. Never require a local
+        // Wi-Fi interface just to begin a CODE session.
+        QuietLog.log("UI", "code_session_start",
+                "local_network=" + (hasUsableLocalNetwork() ? 1 : 0)
+                        + " internet_allowed=1");
         pendingHost = host; pendingCode = code; pendingMode = requestedMode;
         List<String> missing = missingPermissions(requestedMode, host);
         if (!missing.isEmpty()) {
@@ -2633,6 +2668,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         videoControlsVisible = true;
         setFullscreenVideoControlsVisible(true);
         updateLocalPreviewLayout();
+        videoFrame.post(this::refreshVideoTransformsForCurrentLayout);
     }
 
     private void exitVideoFullscreenInPlace() {
@@ -2646,6 +2682,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             }
             if (fullscreenBackButton != null) {
                 try { videoFrame.removeView(fullscreenBackButton); } catch (Exception ignored) {}
+            }
+            if (fullscreenRotateButton != null) {
+                try { videoFrame.removeView(fullscreenRotateButton); } catch (Exception ignored) {}
             }
             if (savedInlineVideoLayout != null) {
                 videoFrame.setLayoutParams(new LinearLayout.LayoutParams(savedInlineVideoLayout));
@@ -2667,10 +2706,12 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
         floatingVideoControls = null;
         fullscreenBackButton = null;
+        fullscreenRotateButton = null;
         fullscreenVideoRoot = null;
         videoControlsVisible = true;
         setFullscreenVideoControlsVisible(true);
         updateLocalPreviewLayout();
+        if (videoFrame != null) videoFrame.post(this::refreshVideoTransformsForCurrentLayout);
         QuietLog.log("UI", "video_fullscreen_restored", "surfaces_preserved=1");
     }
 
@@ -2757,6 +2798,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 dp(46),dp(46),Gravity.START | Gravity.TOP);
         backLp.setMargins(dp(12),dp(12),dp(12),dp(12));
         frame.addView(back, backLp);
+        installFullscreenRotateButton(frame);
     }
 
     private void installBabyParentFullscreenControls(FrameLayout frame) {
@@ -2951,6 +2993,20 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 -2,-2,Gravity.START | Gravity.TOP);
         backLp.setMargins(dp(10),dp(10),dp(10),dp(10));
         frame.addView(back, backLp);
+        installFullscreenRotateButton(frame);
+    }
+
+    private void installFullscreenRotateButton(FrameLayout frame) {
+        if (!devUnlocked || frame == null) return;
+        Button rotate = secondary("ROTATE");
+        rotate.setTextSize(9);
+        rotate.setContentDescription("Open compact video rotation controls");
+        rotate.setOnClickListener(v -> showQuickRotationPanel());
+        fullscreenRotateButton = rotate;
+        FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(
+                dp(76), dp(40), Gravity.END | Gravity.TOP);
+        p.setMargins(dp(10),dp(10),dp(10),dp(10));
+        frame.addView(rotate, p);
     }
 
     private void showFullscreenVideoSession(String code, boolean host) {
@@ -3105,22 +3161,39 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         return r == 90 || r == 270;
     }
 
-    private FrameLayout.LayoutParams makeInlinePreviewLayoutParams() {
+    private int[] localPreviewBoxDp() {
         boolean portrait = localPreviewIsPortrait();
+        int mode = RotationLabConfig.localAspect(this);
+        float ratio = RotationLabConfig.aspectRatio(mode);
+        int longSide = 160;
+        int shortSide = Math.max(72, Math.round(longSide / Math.max(1f, ratio)));
+
+        if (mode == RotationLabConfig.ASPECT_1_1) {
+            longSide = 128;
+            shortSide = 128;
+        }
+        if (RotationLabConfig.stretchAspect(mode)) {
+            shortSide = 90;
+            longSide = 160;
+        }
+
+        return portrait
+                ? new int[] {shortSide, longSide}
+                : new int[] {longSide, shortSide};
+    }
+
+    private FrameLayout.LayoutParams makeInlinePreviewLayoutParams() {
+        int[] box = localPreviewBoxDp();
         FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(
-                dp(portrait ? 90 : 160),
-                dp(portrait ? 160 : 90),
-                Gravity.END | Gravity.BOTTOM);
+                dp(box[0]), dp(box[1]), Gravity.END | Gravity.BOTTOM);
         p.setMargins(dp(8),dp(8),dp(8),dp(8));
         return p;
     }
 
     private FrameLayout.LayoutParams makeFullscreenPreviewLayoutParams() {
-        boolean portrait = localPreviewIsPortrait();
-        int width = dp(portrait ? 90 : 160);
-        int height = dp(portrait ? 160 : 90);
+        int[] box = localPreviewBoxDp();
         FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(
-                width, height, Gravity.END | Gravity.TOP);
+                dp(box[0]), dp(box[1]), Gravity.END | Gravity.TOP);
         p.setMargins(dp(10),dp(10),dp(10),dp(10));
         return p;
     }
@@ -3163,6 +3236,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         }
         if (fullscreenBackButton != null) {
             fullscreenBackButton.setVisibility(visible ? View.VISIBLE : View.GONE);
+        }
+        if (fullscreenRotateButton != null) {
+            fullscreenRotateButton.setVisibility(visible ? View.VISIBLE : View.GONE);
         }
         if (videoStateOverlay != null) {
             videoStateOverlay.setVisibility(visible ? View.VISIBLE : View.GONE);
@@ -3492,7 +3568,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
         localPreview = null;
         localVideoTexture = null;
+        installFullscreenRotateButton(frame);
         setContentView(frame);
+        frame.post(this::refreshVideoTransformsForCurrentLayout);
     }
 
     private void showBlackScreen(String code, boolean host) {
@@ -3605,6 +3683,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         activeInlineVideoFrame = null;
         floatingVideoControls = null;
         fullscreenBackButton = null;
+        fullscreenRotateButton = null;
         fullscreenHiddenViews.clear();
         fullscreenHiddenVisibility.clear();
     }
@@ -3638,21 +3717,39 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                             + " front=" + (SessionBus.localCameraFront ? 1 : 0));
         }
         boolean quarterTurn = drawRotation == 90 || drawRotation == 270;
-        float effectiveSourceWidth = quarterTurn ? H264Codec.HEIGHT : H264Codec.WIDTH;
-        float effectiveSourceHeight = quarterTurn ? H264Codec.WIDTH : H264Codec.HEIGHT;
-
-        float scale = crop
-                ? Math.max(width / effectiveSourceWidth, height / effectiveSourceHeight)
-                : Math.min(width / effectiveSourceWidth, height / effectiveSourceHeight);
-        float displayedWidth = effectiveSourceWidth * scale;
-        float displayedHeight = effectiveSourceHeight * scale;
-        float preRotateWidth = quarterTurn ? displayedHeight : displayedWidth;
-        float preRotateHeight = quarterTurn ? displayedWidth : displayedHeight;
+        int aspectMode = mirror
+                ? RotationLabConfig.localAspect(this)
+                : (isFullscreenVideoRendering()
+                    ? RotationLabConfig.fullscreenAspect(this)
+                    : RotationLabConfig.remoteAspect(this));
 
         float cx = width / 2f;
         float cy = height / 2f;
         android.graphics.Matrix matrix = new android.graphics.Matrix();
-        matrix.setScale(preRotateWidth / width, preRotateHeight / height, cx, cy);
+
+        if (RotationLabConfig.stretchAspect(aspectMode)) {
+            // Deliberate diagnostic option: fill the target rectangle even if
+            // that changes proportions. Useful for confirming whether the
+            // device/Surface pipeline itself is pre-stretching the camera.
+            float preRotateWidth = quarterTurn ? height : width;
+            float preRotateHeight = quarterTurn ? width : height;
+            matrix.setScale(preRotateWidth / width, preRotateHeight / height, cx, cy);
+        } else {
+            float ratio = RotationLabConfig.aspectRatio(aspectMode);
+            float sourceWidth = ratio * 1000f;
+            float sourceHeight = 1000f;
+            float effectiveSourceWidth = quarterTurn ? sourceHeight : sourceWidth;
+            float effectiveSourceHeight = quarterTurn ? sourceWidth : sourceHeight;
+
+            float scale = crop
+                    ? Math.max(width / effectiveSourceWidth, height / effectiveSourceHeight)
+                    : Math.min(width / effectiveSourceWidth, height / effectiveSourceHeight);
+            float displayedWidth = effectiveSourceWidth * scale;
+            float displayedHeight = effectiveSourceHeight * scale;
+            float preRotateWidth = quarterTurn ? displayedHeight : displayedWidth;
+            float preRotateHeight = quarterTurn ? displayedWidth : displayedHeight;
+            matrix.setScale(preRotateWidth / width, preRotateHeight / height, cx, cy);
+        }
         matrix.postRotate(drawRotation, cx, cy);
         if (drawMirror) matrix.postScale(-1f, 1f, cx, cy);
 
@@ -3660,6 +3757,24 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         view.setScaleX(1f);
         view.setScaleY(1f);
         view.setTransform(matrix);
+    }
+
+    private boolean isFullscreenVideoRendering() {
+        return videoFullscreenActive || (fullscreenVideoRoot != null && root == null);
+    }
+
+    private void refreshVideoTransformsForCurrentLayout() {
+        updateLocalPreviewLayout();
+        if (remoteVideoTexture != null) {
+            remoteVideoTexture.post(() ->
+                    applyVideoTextureTransform(remoteVideoTexture,
+                            SessionBus.remoteVideoRotation, false, false));
+        }
+        if (localVideoTexture != null) {
+            localVideoTexture.post(() ->
+                    applyVideoTextureTransform(localVideoTexture,
+                            SessionBus.localVideoRotation, true, false));
+        }
     }
 
     private void updateH264PictureInPictureAspect() {
@@ -3834,12 +3949,24 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
     private List<String> missingPermissions(int mode, boolean isHost) {
         List<String> p = new ArrayList<>();
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) p.add(Manifest.permission.RECORD_AUDIO);
-        if (isHost && mode != SessionService.MODE_VOICE && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) p.add(Manifest.permission.CAMERA);
-        if (Build.VERSION.SDK_INT >= 33) {
-            if (checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED) p.add(Manifest.permission.NEARBY_WIFI_DEVICES);
-            if (mode == SessionService.MODE_SLEEPING_BABY && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) p.add(Manifest.permission.POST_NOTIFICATIONS);
-        } else if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) p.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        // CODE sessions can run entirely over the internet. Nearby Wi-Fi /
+        // location permissions improve local discovery and Wi-Fi Direct, but
+        // they are not prerequisites for starting the secure CODE session.
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            p.add(Manifest.permission.RECORD_AUDIO);
+        }
+        if (isHost && mode != SessionService.MODE_VOICE
+                && checkSelfPermission(Manifest.permission.CAMERA)
+                != PackageManager.PERMISSION_GRANTED) {
+            p.add(Manifest.permission.CAMERA);
+        }
+        if (Build.VERSION.SDK_INT >= 33
+                && mode == SessionService.MODE_SLEEPING_BABY
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            p.add(Manifest.permission.POST_NOTIFICATIONS);
+        }
         return p;
     }
 

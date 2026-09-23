@@ -4,8 +4,8 @@ Updated: **2026-09-23**
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.55 / versionCode 67**  
-Latest release CI: **passed**
+Current release: **v0.3.56 / versionCode 68**  
+Latest release CI: **pending v0.3.56 validation**
 
 ---
 
@@ -162,6 +162,48 @@ Internet-path recovery still needs to become transport-independent.
 ---
 
 # 6. Online P2P work completed
+
+
+## v0.3.56 — Internet CODE regression fix + fullscreen/aspect test expansion
+
+User report after v0.3.55:
+- Internet connection could no longer be started with Wi-Fi off; UI redirected to Wi-Fi settings / hotspot.
+- Starting hotspot still did not satisfy the actual intended separate-network internet use case.
+- Compact ROTATE panel itself was useful.
+- Panel was not accessible while in fullscreen video.
+- Local mini-preview box became 16:9-shaped but the camera contents still appeared stretched.
+- User requested aspect-ratio choices for all camera presentations and fullscreen orientation testing.
+
+Root cause of connection regression:
+- `MainActivity.startRequested(...)` hard-returned when `hasUsableLocalNetwork()` was false.
+- `maybeShowWifiWarning(...)` could also show Wi-Fi/hotspot guidance while CODE was selected.
+- This contradicted the v0.3.49+ transport architecture where CODE may use mobile-data rendezvous/relay without any local Wi-Fi interface.
+
+Fix:
+- CODE HOST/JOIN no longer requires `hasUsableLocalNetwork()`.
+- Wi-Fi warning is now scoped to Nearby/Known only.
+- CODE's required permission gate no longer requires nearby-Wi-Fi/location permission; those remain optional for local discovery/fallback.
+- No SessionService transport ordering or QL5 cryptography changed.
+
+Fullscreen/video lab:
+- Fullscreen normal Video and Parent/Baby fullscreen controls get a developer ROTATE button.
+- Dedicated fullscreen rendering also exposes the ROTATE button.
+- Fullscreen entry/exit/configuration change explicitly reapplies local+remote transforms.
+- Compact panel X close is explicit.
+- Aspect modes added independently for local preview, remote inline, fullscreen remote:
+  Auto / 16:9 / 4:3 / 3:2 / 1:1 / Stretch.
+- Aspect modes alter TextureView presentation matrices; non-Stretch modes preserve the selected target ratio, Stretch intentionally fills/distorts for diagnosis.
+- Local mini-preview container also changes shape to the selected local aspect and effective local rotation.
+
+Human test order:
+1. Update both phones to v0.3.56.
+2. With one phone Wi-Fi OFF + mobile data ON and the other on a separate network, CODE must start without any Wi-Fi/hotspot prompt.
+3. Verify the phones reach the production online peer/session path again.
+4. Enter fullscreen and use the new ROTATE button; confirm panel remains functional.
+5. Use Local Aspect to find which ratio removes the mini-preview stretch.
+6. Test Remote Aspect inline and Fullscreen Aspect fullscreen independently.
+7. Finish portrait / landscape-left / landscape-right matrix before promoting any orientation/aspect experiment to production defaults.
+
 
 
 ## v0.3.55 — Compact persistent rotation panel + local preview aspect
@@ -693,26 +735,21 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: validate v0.3.55 ROTATE ONLY panel and finish landscape orientation
+## Primary next checkpoint: restore internet CODE first, then finish fullscreen rotation/aspect calibration
 
-After v0.3.55 CI passes:
+After v0.3.56 CI passes:
 1. Update both phones through CHECK UPDATE.
-2. Start a same-LAN Video/Baby call.
-3. Open 🛠 -> **ROTATE ONLY • compact live panel**.
-4. Confirm the panel is anchored at the bottom and enough video stays visible above it.
-5. Tap several choices repeatedly; panel must remain open and at the same scroll position.
-6. Confirm the small local self-preview no longer stretches; letterboxing is acceptable.
-7. Keep the portrait combinations already found.
-8. Test landscape-left and landscape-right on the new phone, then old phone.
-9. Repeat front/back camera if results differ.
-10. Send back the exact quick-panel selections that make each phone correct in portrait + both landscape directions.
-11. Promote only the smallest common/proven subset to production defaults.
-12. Then resume the permanent-Pi/internet Voice checkpoint.
-
-Validated and no longer blocking:
-- Older-phone updater signing migration.
-- Sleeping Baby continuous audio.
-- Older-Android full rotation-lab list rendering.
+2. **Internet regression test first:** Phone A Wi-Fi OFF / mobile data ON; Phone B on another network. Use CODE HOST/JOIN. There must be no Wi-Fi/hotspot prerequisite dialog.
+3. Confirm the online CODE path progresses into rendezvous/relay rather than being blocked in MainActivity.
+4. If internet matching still fails after the session starts, export the privacy-safe log; that would be a transport/server issue rather than the removed UI gate.
+5. Start a visual session and enter fullscreen.
+6. Tap the fullscreen **ROTATE** button and verify the compact panel works without leaving fullscreen; X must close it.
+7. Local mini-preview: test Auto / 16:9 / 4:3 / 3:2 / 1:1 and choose the first ratio that makes a face/circular object proportionally correct. Do not use Stretch as the final fix.
+8. Test Remote Aspect inline, then Fullscreen Aspect fullscreen.
+9. Finish portrait, landscape-left, landscape-right on both phones.
+10. Report the working per-phone rotation + aspect selections.
+11. Promote only the proven common subset to production defaults.
+12. Resume internet self-healing/media-relay work after the basic cross-network session is restored.
 
 ---
 

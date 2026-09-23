@@ -279,3 +279,19 @@
 230. Fullscreen round trip: enter and leave in-place fullscreen; the small local preview must return to bottom-right inline placement with correct aspect.
 231. Orientation result capture: retain the working portrait settings for each phone and continue landscape-left/landscape-right testing before promoting any experiment to production defaults.
 
+232. v0.3.56 internet CODE regression: with Wi-Fi OFF on one phone and mobile data ON, CODE HOST/JOIN must be allowed to start; QuietLink must not redirect to Wi-Fi settings or require a hotspot.
+233. CODE warning scope: while CODE tab is selected, foreground/resume and pressing HOST/JOIN must not show the Wi-Fi/hotspot warning. Nearby/Known must still show their local-network warning when appropriate.
+234. CODE permission independence: a CODE session must not be blocked solely because nearby-Wi-Fi/location permission is unavailable; microphone/camera/notification permissions remain mode-specific as required.
+235. Local-first regression: with both phones on the same LAN/hotspot, CODE must still prefer the existing local path rather than forcing rendezvous.
+236. Internet transport security regression: QL5 handshake/control/chat and encrypted media behavior are unchanged; no plaintext media/chat/session keys may be introduced by this UI fix.
+237. Fullscreen rotation access: enter fullscreen Video and Baby views and verify a developer **ROTATE** button opens the compact panel without leaving fullscreen.
+238. Fullscreen rotation live apply: change sender/receiver rotation while fullscreen and verify the visible fullscreen video updates immediately; repeat after rotating the device and after exiting/re-entering fullscreen.
+239. Compact panel close: verify the visible **X** closes the bottom panel in inline and fullscreen modes.
+240. Aspect controls: verify Local Aspect, Remote Aspect, and Fullscreen Aspect each expose Auto/16:9/4:3/3:2/1:1/Stretch and apply without dismissing the compact panel.
+241. Local aspect independence: changing Local Aspect must alter only the self-preview presentation/box; front/back camera switching must keep the selected local aspect option.
+242. Remote inline aspect independence: changing Remote Aspect must affect the main non-fullscreen remote TextureView without changing Fullscreen Aspect.
+243. Fullscreen aspect independence: while fullscreen, Fullscreen Aspect must affect the remote fullscreen presentation; returning inline must restore the Remote Aspect presentation.
+244. Stretch diagnostic: Stretch is intentionally allowed to distort; all non-Stretch aspect modes must preserve a fixed target ratio and may letterbox rather than fill.
+245. Mini-preview distortion test: use a face/circular object and compare 16:9, 4:3, 3:2, 1:1 until circles/facial proportions are visually correct on each phone; record the working local ratio.
+246. Fullscreen orientation matrix: portrait, landscape-left and landscape-right must be testable directly from the fullscreen ROTATE panel without closing fullscreen.
+

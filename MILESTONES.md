@@ -1,7 +1,7 @@
 # QuietLink milestones
 
 Updated: 2026-09-23  
-Current release: **v0.3.55**  
+Current release: **v0.3.56**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -51,6 +51,11 @@ Source of truth: **GitHub main**
    - ✅ v0.3.54 older-Android rotation-lab list rendering fix
    - ✅ Portrait orientation manually corrected on both phones with rotation-lab settings
    - ✅ v0.3.55 compact persistent ROTATE ONLY panel + self-preview aspect fix
+   - ✅ v0.3.56 CODE no longer blocked by Wi-Fi/hotspot prerequisite
+   - ✅ v0.3.56 fullscreen ROTATE access + explicit transform refresh
+   - ✅ v0.3.56 Local/Remote/Fullscreen aspect-ratio test controls
+   - ⏳ Human: retest Wi-Fi-off mobile-data CODE connection
+   - ⏳ Human: identify non-stretched aspect + finish fullscreen landscape rotation matrix
    - ⏳ Human: validate compact panel and landscape-left/right settings on both phones
    - ✅ Human: rotation controls render on older phone
    - ✅ Human: CHECK UPDATE v0.3.52→v0.3.53 works on older phone
