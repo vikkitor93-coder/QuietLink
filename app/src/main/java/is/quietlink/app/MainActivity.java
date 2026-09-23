@@ -1260,12 +1260,48 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         clearLp.setMargins(dp(4),0,0,0);
         actions.addView(clear, clearLp);
 
-        box.addView(actions, lp(-1,dp(34),0,0,0,3));
+        box.addView(actions, lp(-1,dp(34),0,0,0,2));
+
+        Button profileText = secondary("SHOW / COPY PROFILE");
+        profileText.setTextSize(8);
+        profileText.setOnClickListener(v ->
+                showVideoProfileText(activeMode, full));
+        box.addView(profileText, lp(-1,dp(34),0,0,0,2));
+
         TextView note = text(saved
                         ? "This profile auto-loads when this presentation mode opens."
                         : "Save once; QuietLink will auto-load it whenever this mode opens.",
                 8, muted(), false);
         box.addView(note, lp(-1,-2,0,0,0,3));
+    }
+
+    private void showVideoProfileText(int mode, boolean fullscreen) {
+        final String summary = RotationLabConfig.profileSummary(
+                this, mode, fullscreen);
+
+        TextView body = text(summary, 11, Color.WHITE, false);
+        body.setTextIsSelectable(true);
+        body.setPadding(dp(12),dp(10),dp(12),dp(10));
+
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(RotationLabConfig.profileLabel(mode, fullscreen))
+                .setView(body)
+                .setPositiveButton("COPY", (d, which) -> {
+                    try {
+                        android.content.ClipboardManager clipboard =
+                                (android.content.ClipboardManager)
+                                        getSystemService(CLIPBOARD_SERVICE);
+                        if (clipboard != null) {
+                            clipboard.setPrimaryClip(
+                                    android.content.ClipData.newPlainText(
+                                            "QuietLink video profile", summary));
+                            Toast.makeText(this, "Profile copied",
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                    } catch (Exception ignored) {}
+                })
+                .setNegativeButton("Close", null)
+                .show();
     }
 
     private void applySavedVideoProfile(boolean fullscreen) {
