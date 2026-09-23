@@ -1,4 +1,4 @@
-# QuietLink 0.3.61
+# QuietLink 0.3.62
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,30 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.62 canonical H.264 video orientation
+- Three different phones were manually calibrated and all could be made correct, but they required different combinations of sender rotation, receiver offsets, local preview modes, frame metadata, and mirror settings. That ruled out one safe universal legacy offset.
+- The underlying problem was architectural: QuietLink used one numeric angle for several different concepts:
+  - Camera2 sensor-relative rotation,
+  - the Camera2/SurfaceTexture local preview transform,
+  - optional Android rotate-and-crop compatibility,
+  - H.264 frame orientation,
+  - and the decoder TextureView's final presentation rotation.
+- Android documents that a Camera2-backed `TextureView` already compensates the camera sensor orientation; the app only needs to compensate display rotation and scaling. Applying QuietLink's transmitted sensor rotation to that same local TextureView could therefore rotate the local preview a second time.
+- New peers advertise **ROT_CW1**. When both ends support it and H.264 is active, QuietLink switches to one explicit wire semantic: **clockwise rotation required to display raw sensor-oriented H.264 pixels**.
+- Canonical mode:
+  - computes front/back camera orientation into that single clockwise convention,
+  - sends rotation on each H.264 access unit using the existing bounded metadata bits,
+  - also keeps the control rotation message for transition/recovery compatibility,
+  - applies the canonical angle directly to the decoded remote TextureView,
+  - does **not** reuse that sensor angle as the local Camera2 TextureView transform,
+  - uses local display compensation + front-camera mirror only,
+  - derives automatic aspect from the canonical stream orientation instead of saved manual aspect guesses.
+- On Android 12 / API 31+ QuietLink requests `SCALER_ROTATE_AND_CROP_NONE` when supported, so the camera framework cannot silently AUTO-rotate/crop the H.264 encoder surface differently on different device/window configurations. The actual capture-result mode is logged privacy-safely once.
+- Mixed-version peers stay on the legacy pipeline automatically.
+- Existing saved VIDEO/BABY calibration profiles are **not deleted**. They are bypassed while canonical mode is active and become active again for an old peer or when Developer Video Tune selects **LEGACY PROFILE • FORCED**.
+- Portrait-only activity lock from v0.3.61 remains in place while this normalized pipeline is validated across the existing phones plus a fresh fourth phone.
+- QL5 encryption, package/signing identity, local-first networking and media contents are unchanged.
 
 ## 0.3.61 portrait stabilization + chat download + Wi-Fi Direct readiness
 - **Temporary orientation policy:** MainActivity is locked to **portrait**. QuietLink will not rotate the application UI/video presentation into landscape while the underlying Camera2/H.264 transform model is being corrected.
