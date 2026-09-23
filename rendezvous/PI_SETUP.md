@@ -13,6 +13,9 @@ The current test Pi is Raspberry Pi OS Bullseye on 32-bit `armhf`. Bullseye's no
 - `POST /v1/register`
 - `POST /v1/poll`
 - `POST /v1/leave`
+- `POST /v1/relay-send`
+- `POST /v1/relay-poll`
+- `POST /v1/relay-ack`
 
 Android does not care whether the server is the Node implementation or the Pi Python implementation.
 
@@ -64,8 +67,8 @@ Expected fields include:
 ```text
 "service":"quietlink-online"
 "status":"ok"
-"phase":"rendezvous-bootstrap"
-"build":"pi-python-test"
+"phase":"control-relay-test"
+"build":"pi-python-control-relay"
 ```
 
 You can also check:
@@ -107,6 +110,18 @@ curl https://rendezvousquietlinkvikman.dpdns.org/health
 Both should return QuietLink health JSON. Never commit/paste the Cloudflare tunnel token.
 
 Do not send SSH passwords, router passwords, tunnel credentials, private keys, or other secrets. Only the temporary public HTTPS test URL is needed.
+
+### v0.3.49 control relay
+
+The current Pi server forwards a bounded reliable QL5 control byte stream after rendezvous matching. It does **not** terminate QuietLink encryption and does not receive session keys, decrypted chat/control, audio, or video. Relay chunks are held only in memory, sequence/ACK protected, and removed as they are acknowledged or registrations expire.
+
+After pulling current `main`, rerun:
+
+```bash
+sudo bash rendezvous/pi/install.sh
+```
+
+Then verify local and public `/health` show `phase=control-relay-test` and `build=pi-python-control-relay`.
 
 ## Privacy
 
