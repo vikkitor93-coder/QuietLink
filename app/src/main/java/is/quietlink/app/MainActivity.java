@@ -3565,6 +3565,22 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         TextView note = text("Messages exist only for this connection and are cleared when it ends.", 11, muted(), false);
         box.addView(note, lp(-1,-2,0,0,0,6));
 
+        if (devUnlocked && !devDummySession) {
+            Button sendLog = secondary("📄 SEND MY LOG");
+            sendLog.setTextSize(10);
+            sendLog.setContentDescription("Send this phone's privacy-safe diagnostic log as a text file");
+            sendLog.setOnClickListener(v -> {
+                try {
+                    startService(new Intent(this, SessionService.class)
+                            .setAction(SessionService.ACTION_SEND_DIAGNOSTIC_LOG));
+                    Toast.makeText(this,
+                            "Sending privacy-safe diagnostic log…",
+                            Toast.LENGTH_SHORT).show();
+                } catch (Exception ignored) {}
+            });
+            box.addView(sendLog, lp(-1,dp(38),0,0,0,6));
+        }
+
         chatScroll = new ScrollView(this);
         chatScroll.setFillViewport(true);
         chatMessageList = column();
@@ -3654,9 +3670,20 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 meta.addView(time, new LinearLayout.LayoutParams(-2,-2));
                 bubble.addView(meta, lp(-1,-2,0,0,0,0));
 
-                TextView body = text(message.text, 14, Color.WHITE, false);
-                body.setTextIsSelectable(false);
-                bubble.addView(body, lp(-1,-2,0,2,0,0));
+                if (message.isFile()) {
+                    Button file = secondary("📄  " + message.fileName
+                            + "\n" + formatChatFileSize(message.fileSize));
+                    file.setTextSize(11);
+                    file.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+                    file.setAllCaps(false);
+                    file.setContentDescription("Open received text file " + message.fileName);
+                    file.setOnClickListener(v -> showChatTextFile(message));
+                    bubble.addView(file, lp(-1,dp(58),0,3,0,0));
+                } else {
+                    TextView body = text(message.text, 14, Color.WHITE, false);
+                    body.setTextIsSelectable(false);
+                    bubble.addView(body, lp(-1,-2,0,2,0,0));
+                }
 
                 LinearLayout.LayoutParams bubbleLp = new LinearLayout.LayoutParams(-1,-2);
                 bubbleLp.setMargins(message.mine ? dp(36) : 0,dp(3),message.mine ? 0 : dp(36),dp(3));
@@ -3667,6 +3694,53 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         if (chatScroll != null) {
             chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
         }
+    }
+
+    private String formatChatFileSize(long bytes) {
+        if (bytes < 1024L) return bytes + " B";
+        if (bytes < 1024L * 1024L) {
+            return String.format(java.util.Locale.US, "%.1f KB", bytes / 1024.0);
+        }
+        return String.format(java.util.Locale.US, "%.1f MB",
+                bytes / (1024.0 * 1024.0));
+    }
+
+    private void showChatTextFile(SessionBus.ChatMessage message) {
+        if (message == null || !message.isFile()) return;
+
+        String contents;
+        try {
+            java.io.File f = new java.io.File(message.filePath);
+            if (!f.exists() || !f.isFile() || f.length() > 1024L * 1024L) {
+                throw new java.io.IOException("Attachment unavailable");
+            }
+
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+                byte[] buffer = new byte[8192];
+                int n;
+                while ((n = in.read(buffer)) >= 0) {
+                    if (n > 0) out.write(buffer, 0, n);
+                }
+            }
+            contents = new String(out.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            Toast.makeText(this, "This text file is no longer available",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        ScrollView scroll = new ScrollView(this);
+        TextView body = text(contents, 10, Color.WHITE, false);
+        body.setTextIsSelectable(true);
+        body.setPadding(dp(12),dp(10),dp(12),dp(10));
+        scroll.addView(body);
+
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(message.fileName)
+                .setView(scroll)
+                .setNegativeButton("Close", null)
+                .show();
     }
 
     private void updateChatButtonBadge() {
