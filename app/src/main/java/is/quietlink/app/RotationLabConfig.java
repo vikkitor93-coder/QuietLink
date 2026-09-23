@@ -153,6 +153,43 @@ final class RotationLabConfig {
         return true;
     }
 
+    static String profileSummary(Context context, int mode, boolean fullscreen) {
+        SharedPreferences p = prefs(context);
+        String pre = PROFILE_PREFIX + profileSlot(mode, fullscreen) + "_";
+        boolean saved = p.getBoolean(pre + "saved", false);
+
+        int tx = saved ? p.getInt(pre + KEY_TX_FORMULA, TX_CURRENT) : txFormula(context);
+        int source = saved ? p.getInt(pre + KEY_SOURCE, SOURCE_DISPLAY) : rotationSource(context);
+        int preview = saved ? p.getInt(pre + KEY_PREVIEW, PREVIEW_STREAM_ROTATION) : localPreviewMode(context);
+        int previewOffset = saved ? p.getInt(pre + KEY_LOCAL_PREVIEW_OFFSET, 0) : localPreviewOffset(context);
+        boolean mirror = saved ? p.getBoolean(pre + KEY_MIRROR, true) : mirrorLocalPreview(context);
+        boolean frameTx = saved ? p.getBoolean(pre + KEY_SEND_FRAME_META, false) : sendFrameRotation(context);
+        boolean frameRx = saved ? p.getBoolean(pre + KEY_ACCEPT_FRAME_META, false) : acceptFrameRotation(context);
+        int forced = saved ? p.getInt(pre + KEY_FORCE_ROTATION, -1) : forcedTxRotation(context);
+        int remoteModeValue = saved ? p.getInt(pre + KEY_REMOTE_MODE, REMOTE_DIRECT) : remoteMode(context);
+        int remoteOffsetValue = saved ? p.getInt(pre + KEY_REMOTE_OFFSET, 0) : remoteOffset(context);
+        int localAspectValue = saved ? p.getInt(pre + KEY_LOCAL_ASPECT, ASPECT_AUTO) : localAspect(context);
+        int remoteAspectValue = saved ? p.getInt(pre + KEY_REMOTE_ASPECT, ASPECT_AUTO) : remoteAspect(context);
+        int fullAspectValue = saved ? p.getInt(pre + KEY_FULLSCREEN_ASPECT, ASPECT_AUTO) : fullscreenAspect(context);
+        boolean jpeg = saved ? p.getBoolean(pre + KEY_FORCE_JPEG, false) : forceJpeg(context);
+
+        return "QuietLink " + profileLabel(mode, fullscreen)
+                + " profile"
+                + "\nWindow 1: direction=" + remoteModeLabel(remoteModeValue)
+                + ", offset=+" + normalizeQuarter(remoteOffsetValue) + "°"
+                + ", aspect=" + aspectLabel(fullscreen ? fullAspectValue : remoteAspectValue)
+                + ", frameRX=" + (frameRx ? "ON" : "OFF")
+                + "\nWindow 2: preview=" + previewLabel(preview)
+                + ", offset=+" + normalizeQuarter(previewOffset) + "°"
+                + ", aspect=" + aspectLabel(localAspectValue)
+                + ", mirror=" + (mirror ? "ON" : "OFF")
+                + "\nSender: rotation=" + forcedLabel(forced)
+                + ", formula=" + txFormulaLabel(tx)
+                + ", source=" + sourceLabel(source)
+                + ", frameTX=" + (frameTx ? "ON" : "OFF")
+                + ", codec=" + (jpeg ? "JPEG" : "AUTO/H264");
+    }
+
     static void clearProfile(Context context, int mode, boolean fullscreen) {
         SharedPreferences p = prefs(context);
         String pre = PROFILE_PREFIX + profileSlot(mode, fullscreen) + "_";
