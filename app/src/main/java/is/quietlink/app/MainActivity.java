@@ -961,8 +961,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         });
         header.addView(full, new LinearLayout.LayoutParams(dp(84),dp(34)));
 
-        Button close = secondary("✕");
-        close.setTextSize(13);
+        Button close = secondary("X");
+        close.setTextSize(12);
         close.setOnClickListener(v -> dialog.dismiss());
         LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(dp(42),dp(34));
         closeLp.setMargins(dp(5),0,0,0);
@@ -1014,6 +1014,24 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 new String[]{"DISPLAY","PHYSICAL"},
                 RotationLabConfig.rotationSource(this),
                 index -> RotationLabConfig.setRotationSource(this, index),
+                dialog);
+
+        addQuickRotationChoices(box, "LOCAL ASPECT",
+                new String[]{"AUTO","16:9","4:3","3:2","1:1","STRETCH"},
+                RotationLabConfig.localAspect(this),
+                index -> RotationLabConfig.setLocalAspect(this, index),
+                dialog);
+
+        addQuickRotationChoices(box, "REMOTE ASPECT",
+                new String[]{"AUTO","16:9","4:3","3:2","1:1","STRETCH"},
+                RotationLabConfig.remoteAspect(this),
+                index -> RotationLabConfig.setRemoteAspect(this, index),
+                dialog);
+
+        addQuickRotationChoices(box, "FULLSCREEN ASPECT",
+                new String[]{"AUTO","16:9","4:3","3:2","1:1","STRETCH"},
+                RotationLabConfig.fullscreenAspect(this),
+                index -> RotationLabConfig.setFullscreenAspect(this, index),
                 dialog);
 
         LinearLayout toggles = row();
@@ -1124,6 +1142,12 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 "Remote rotation offset • +" + RotationLabConfig.remoteOffset(this) + "°",
                 "Video codec test • "
                         + (RotationLabConfig.forceJpeg(this) ? "FORCE JPEG" : "AUTO / H.264"),
+                "Local preview aspect • "
+                        + RotationLabConfig.aspectLabel(RotationLabConfig.localAspect(this)),
+                "Remote inline aspect • "
+                        + RotationLabConfig.aspectLabel(RotationLabConfig.remoteAspect(this)),
+                "Fullscreen remote aspect • "
+                        + RotationLabConfig.aspectLabel(RotationLabConfig.fullscreenAspect(this)),
                 "Show test instructions",
                 "Reset production defaults"
         };
@@ -1200,7 +1224,22 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                                 this, !RotationLabConfig.forceJpeg(this));
                         applyRotationLabNow();
                         showVideoRotationLab();
-                    } else if (which == 11) {
+                    } else if (which == 11) showRotationLabChoice(
+                            "Local preview aspect",
+                            new String[] {"Auto", "16:9", "4:3", "3:2", "1:1", "Stretch"},
+                            RotationLabConfig.localAspect(this),
+                            index -> RotationLabConfig.setLocalAspect(this, index));
+                    else if (which == 12) showRotationLabChoice(
+                            "Remote inline aspect",
+                            new String[] {"Auto", "16:9", "4:3", "3:2", "1:1", "Stretch"},
+                            RotationLabConfig.remoteAspect(this),
+                            index -> RotationLabConfig.setRemoteAspect(this, index));
+                    else if (which == 13) showRotationLabChoice(
+                            "Fullscreen remote aspect",
+                            new String[] {"Auto", "16:9", "4:3", "3:2", "1:1", "Stretch"},
+                            RotationLabConfig.fullscreenAspect(this),
+                            index -> RotationLabConfig.setFullscreenAspect(this, index));
+                    else if (which == 14) {
                         showRotationLabInstructions();
                     } else {
                         RotationLabConfig.resetProduction(this);
@@ -1266,6 +1305,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                         + " remote_offset=" + RotationLabConfig.remoteOffset(this)
                         + " frame_tx=" + (RotationLabConfig.sendFrameRotation(this) ? 1 : 0)
                         + " frame_rx=" + (RotationLabConfig.acceptFrameRotation(this) ? 1 : 0)
+                        + " local_aspect=" + RotationLabConfig.localAspect(this)
+                        + " remote_aspect=" + RotationLabConfig.remoteAspect(this)
+                        + " fullscreen_aspect=" + RotationLabConfig.fullscreenAspect(this)
                         + " jpeg=" + (RotationLabConfig.forceJpeg(this) ? 1 : 0));
 
         if (SessionBus.active && !devDummySession) {
@@ -1823,7 +1865,17 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         boolean hotspot = isHotspotLocalNetwork();
         boolean needsSharedNetwork = selectedJoinTab == TAB_NEARBY || selectedJoinTab == TAB_KNOWN;
 
-        if (hotspot || (wifiEnabled && (onWifi || !needsSharedNetwork))) {
+        // CODE can work over mobile data / internet and must never be blocked
+        // or nagged into Wi-Fi/hotspot merely because no local network exists.
+        if (!needsSharedNetwork) {
+            if (wifiDialog != null) {
+                wifiDialog.dismiss();
+                wifiDialog = null;
+            }
+            return;
+        }
+
+        if (hotspot || (wifiEnabled && onWifi)) {
             if (wifiDialog != null) {
                 wifiDialog.dismiss();
                 wifiDialog = null;
@@ -1898,10 +1950,12 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     }
 
     private void startRequested(boolean host, String code, int requestedMode) {
-        if (!hasUsableLocalNetwork()) {
-            maybeShowWifiWarning(true);
-            return;
-        }
+        // CODE is transport-agnostic. It may use LAN/hotspot first, then the
+        // production internet rendezvous/relay path. Never require a local
+        // Wi-Fi interface just to begin a CODE session.
+        QuietLog.log("UI", "code_session_start",
+                "local_network=" + (hasUsableLocalNetwork() ? 1 : 0)
+                        + " internet_allowed=1");
         pendingHost = host; pendingCode = code; pendingMode = requestedMode;
         List<String> missing = missingPermissions(requestedMode, host);
         if (!missing.isEmpty()) {
