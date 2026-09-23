@@ -1,4 +1,4 @@
-# QuietLink 0.3.59
+# QuietLink 0.3.60
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,18 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.60 local log/profile export
+- Developer tools now expose **Export log + profiles (.txt)** and **Export profiles only (.txt)**.
+- Live chat exposes the same two local export actions next to **SEND LOG + PROFILES**. These exports use Android's document picker and do not require the peer connection to be healthy.
+- The combined export remains the privacy-safe QuietLog report and includes saved calibration profiles automatically.
+- The profile-only report is intentionally compact for rotation/aspect debugging and includes:
+  - current Android display rotation,
+  - currently reported local/remote stream rotations,
+  - the resolved local-preview and remote presentation rotations,
+  - current tuning summary,
+  - VIDEO INLINE / VIDEO FULLSCREEN / BABY INLINE / BABY FULLSCREEN saved profiles.
+- This gives enough offset/transform evidence to trace why a given phone needs different manual corrections without exposing network identifiers, pairing codes, keys, chat, audio, or video content.
 
 ## 0.3.59 diagnostic-transfer stability + Wi-Fi Direct repair
 - Fixes a v0.3.58 regression where sending the diagnostic attachment could destabilize both sides of a call.

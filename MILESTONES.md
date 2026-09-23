@@ -1,7 +1,7 @@
 # QuietLink milestones
 
 Updated: 2026-09-23  
-Current release: **v0.3.59**  
+Current release: **v0.3.60**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -65,6 +65,9 @@ Source of truth: **GitHub main**
    - ✅ v0.3.59 saved calibration profiles embedded in diagnostic export
    - ✅ v0.3.59 privacy-safe uncaught crash fingerprint
    - ✅ v0.3.59 Wi-Fi Direct permission/startup/retry regression repair
+   - ✅ v0.3.60 local export of log + profiles from chat and Developer tools
+   - ✅ v0.3.60 profile-only transform/offset report
+   - ⏳ Human: export working phone profiles and send them back for underlying rotation analysis
    - ⏳ Human: re-test log transfer on both phones and no-router Wi-Fi Direct CODE
    - ⏳ Human: save/report working profiles per phone/mode and validate log transfer
    - ⏳ Human: identify correct Window 1 and Window 2 aspect/rotation settings

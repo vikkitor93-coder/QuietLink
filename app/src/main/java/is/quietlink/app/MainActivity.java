@@ -27,6 +27,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     private static final int TAB_KNOWN = 1;
     private static final int TAB_CODE = 2;
     private static final int REQ_EXPORT_LOG = 91;
+    private static final int REQ_EXPORT_PROFILES = 92;
 
     private LinearLayout root;
     private LinearLayout joinContent;
@@ -839,7 +840,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     "ROTATE ONLY • compact live panel",
                     "Video rotation lab • full",
                     "Report log to GitHub",
-                    "Export privacy-safe log",
+                    "Export log + profiles (.txt)",
+                    "Export profiles only (.txt)",
                     "Clear diagnostic log"
             };
             new android.app.AlertDialog.Builder(this)
@@ -851,6 +853,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                         else if (which == 3) showVideoRotationLab();
                         else if (which == 4) reportDiagnosticLogToGitHub();
                         else if (which == 5) exportDiagnosticLog();
+                        else if (which == 6) exportVideoProfiles();
                         else {
                             QuietLog.clear(this);
                             Toast.makeText(this, "Diagnostic log cleared", Toast.LENGTH_SHORT).show();
@@ -873,7 +876,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 "Live diagnostics",
                 "Report log to GitHub",
                 "Online rendezvous test setup",
-                "Export privacy-safe log",
+                "Export log + profiles (.txt)",
+                "Export profiles only (.txt)",
                 "Clear diagnostic log"
         };
 
@@ -892,6 +896,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     else if (which == 9) reportDiagnosticLogToGitHub();
                     else if (which == 10) showOnlineRendezvousTestSetup();
                     else if (which == 11) exportDiagnosticLog();
+                    else if (which == 12) exportVideoProfiles();
                     else {
                         QuietLog.clear(this);
                         Toast.makeText(this, "Diagnostic log cleared", Toast.LENGTH_SHORT).show();
@@ -1807,12 +1812,24 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     }
 
     private void exportDiagnosticLog() {
+        launchTextExport(
+                REQ_EXPORT_LOG,
+                "QuietLink-diagnostic-log-with-profiles.txt");
+    }
+
+    private void exportVideoProfiles() {
+        launchTextExport(
+                REQ_EXPORT_PROFILES,
+                "QuietLink-video-profiles.txt");
+    }
+
+    private void launchTextExport(int requestCode, String fileName) {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("text/plain");
-        intent.putExtra(Intent.EXTRA_TITLE, "QuietLink-diagnostic-log.txt");
+        intent.putExtra(Intent.EXTRA_TITLE, fileName);
         try {
-            startActivityForResult(intent, REQ_EXPORT_LOG);
+            startActivityForResult(intent, requestCode);
         } catch (Exception e) {
             Toast.makeText(this, "Could not open file exporter", Toast.LENGTH_LONG).show();
         }
@@ -1820,17 +1837,24 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQ_EXPORT_LOG || resultCode != RESULT_OK
+        if ((requestCode != REQ_EXPORT_LOG && requestCode != REQ_EXPORT_PROFILES)
+                || resultCode != RESULT_OK
                 || data == null || data.getData() == null) return;
         try (java.io.OutputStream out =
                      getContentResolver().openOutputStream(data.getData(), "wt")) {
             if (out == null) throw new java.io.IOException("No output stream");
-            out.write(QuietLog.exportText(this)
-                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            String payload = requestCode == REQ_EXPORT_PROFILES
+                    ? QuietLog.exportProfilesText(this)
+                    : QuietLog.exportText(this);
+            out.write(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             out.flush();
-            Toast.makeText(this, "Privacy-safe log exported", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this,
+                    requestCode == REQ_EXPORT_PROFILES
+                            ? "Video profiles exported"
+                            : "Privacy-safe log + profiles exported",
+                    Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
-            Toast.makeText(this, "Could not export diagnostic log", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Could not export text file", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -3629,6 +3653,21 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 } catch (Exception ignored) {}
             });
             box.addView(sendLog, lp(-1,dp(38),0,0,0,4));
+
+            LinearLayout exportRow = row();
+            Button exportAll = secondary("EXPORT LOG + PROFILES");
+            exportAll.setTextSize(8);
+            exportAll.setOnClickListener(v -> exportDiagnosticLog());
+            exportRow.addView(exportAll, new LinearLayout.LayoutParams(0,dp(34),1f));
+
+            Button exportProfiles = secondary("EXPORT PROFILES");
+            exportProfiles.setTextSize(8);
+            exportProfiles.setOnClickListener(v -> exportVideoProfiles());
+            LinearLayout.LayoutParams exportProfileLp =
+                    new LinearLayout.LayoutParams(0,dp(34),0.78f);
+            exportProfileLp.setMargins(dp(4),0,0,0);
+            exportRow.addView(exportProfiles, exportProfileLp);
+            box.addView(exportRow, lp(-1,dp(34),0,0,0,4));
 
             chatTransferStatus = text("", 9, muted(), false);
             chatTransferStatus.setVisibility(View.GONE);

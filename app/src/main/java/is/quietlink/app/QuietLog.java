@@ -152,6 +152,46 @@ public final class QuietLog {
         }
     }
 
+    public static synchronized String exportProfilesText(Context context) {
+        if (app == null) init(context);
+
+        StringBuilder out = new StringBuilder();
+        out.append("QuietLink video calibration report\n");
+        out.append("Generated: ")
+                .append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date()))
+                .append("\n");
+        out.append("Privacy-safe: no peer/device names, network addresses, codes, keys, chat or media content.\n\n");
+
+        out.append("CURRENT CALIBRATION SNAPSHOT\n");
+        out.append("Display rotation: ")
+                .append(RotationLabConfig.displayRotationDegrees(context))
+                .append("°\n");
+        out.append("Reported local stream rotation: ")
+                .append(SessionBus.localVideoRotation)
+                .append("°\n");
+        out.append("Reported remote stream rotation: ")
+                .append(SessionBus.remoteVideoRotation)
+                .append("°\n");
+        out.append("Resolved local preview rotation: ")
+                .append(RotationLabConfig.resolveLocalPreviewRotation(
+                        context, SessionBus.localVideoRotation))
+                .append("°\n");
+        out.append("Resolved remote rotation: ")
+                .append(RotationLabConfig.resolveRemoteRotation(
+                        context, SessionBus.remoteVideoRotation))
+                .append("°\n");
+        out.append("Current tuning: ")
+                .append(RotationLabConfig.summary(context))
+                .append("\n\n");
+
+        out.append("SAVED VIDEO CALIBRATION PROFILES\n");
+        appendProfile(out, context, SessionService.MODE_VIDEO, false);
+        appendProfile(out, context, SessionService.MODE_VIDEO, true);
+        appendProfile(out, context, SessionService.MODE_BABY, false);
+        appendProfile(out, context, SessionService.MODE_BABY, true);
+        return out.toString();
+    }
+
     public static synchronized String exportText(Context context) {
         if (app == null) init(context);
         StringBuilder out = new StringBuilder();
@@ -163,13 +203,7 @@ public final class QuietLog {
         out.append("Excluded by design: IP addresses, peer/device names, device IDs, ")
                 .append("fingerprints/keys, room codes, chat text, audio/video content.\n\n");
 
-        out.append("Saved video calibration profiles:\n");
-        appendProfile(out, context, SessionService.MODE_VIDEO, false);
-        appendProfile(out, context, SessionService.MODE_VIDEO, true);
-        appendProfile(out, context, SessionService.MODE_BABY, false);
-        appendProfile(out, context, SessionService.MODE_BABY, true);
-        out.append('\n');
-
+        out.append(exportProfilesText(context)).append('\n');
 
         if (app == null) return out.append("(logger unavailable)\n").toString();
         File f = new File(app.getFilesDir(), FILE_NAME);
