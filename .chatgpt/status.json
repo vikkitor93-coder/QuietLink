@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "working",
-  "task": "Speed up video rotation testing",
-  "summary": "v0.3.55 adds a compact persistent bottom ROTATE ONLY panel and fixes the small local preview to preserve aspect/orientation. Portrait is manually correct on both phones; landscape matrix remains. CI is next.",
-  "updated_at": "2026-09-23T04:55:00Z",
-  "artifact": "QuietLink v0.3.55"
+  "status": "partial",
+  "task": "Validate compact rotation panel and landscape orientation",
+  "summary": "v0.3.55 built, signed, tested, and published successfully. Human test now needed: update both phones, use ROTATE ONLY bottom panel, confirm it stays open/keeps scroll position, verify small self-preview no longer stretches, then finish landscape-left/right settings.",
+  "updated_at": "2026-09-23T05:02:00Z",
+  "artifact": "QuietLink v0.3.55 APK"
 }
