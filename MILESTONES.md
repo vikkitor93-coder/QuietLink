@@ -26,7 +26,7 @@ Source of truth: **GitHub main**
    - ✅ Privacy-safe audio lifecycle/flow diagnostics added
    - ⏳ Verify older-phone Sleeping Baby room audio in v0.3.45
 
-6. ⏳ Security hardening
+6. ✅ Security hardening
    - ✅ QL5 session crypto hardening
    - ✅ Full reachable-history credential audit completed
    - ✅ Audit found only the exposed Android signing keystore/password
@@ -38,11 +38,12 @@ Source of truth: **GitHub main**
    - ✅ Old keystore/password removed from current main
    - ✅ All live feature branches fast-forwarded to cleaned main
    - ✅ Normal CI now signs only with secret-held v2 key
-   - ⏳ Confirm v0.3.46 bridge is installed on both phones
-   - ⏳ Publish v0.3.47 signer-rotation release
-   - ⏳ Verify both phones update in place to v2 signer
-   - ⏳ Rewrite reachable Git history to purge old signing material
-   - ⏳ Re-run history audit and require zero findings
+   - ✅ v0.3.46 bridge installed on both phones
+   - ✅ v0.3.47 v2 signer-rotation release published
+   - ✅ Both phones updated in place to v2 signer
+   - ✅ All five live branches rewritten to sanitized history
+   - ✅ Legacy APK/source artifacts purged
+   - ✅ Post-purge full-history audit: zero credential-pattern findings
 
 7. ⏳ Online P2P + rendezvous
    - ✅ Online availability/status dot with helpful local-only fallback
@@ -95,7 +96,7 @@ Source of truth: **GitHub main**
 
 ## Current truth
 
-v0.3.45 includes the current STUN/rendezvous groundwork, verified older-device Baby camera recovery, Parent fullscreen controls, and older-device audio self-recovery work, but is not yet a completed internet-calling release.
+v0.3.47 is the current stable release and completes the Android signing-key rotation to the private v2 signer. Internet calling remains under milestone 7.
 
 The Online status dot remains red/local-only while the published status document reports `onlineCallsAvailable=false` and has no active `rendezvousUrl`.
 
