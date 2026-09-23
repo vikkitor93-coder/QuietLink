@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "working",
-  "task": "Export calibration evidence locally from chat and Developer tools",
-  "summary": "v0.3.60 adds local log+profiles and profile-only .txt export from both chat and Developer tools. Profile reports include current reported/resolved rotations and all saved mode/presentation offsets for root-cause analysis. CI is next.",
-  "updated_at": "2026-09-23T17:58:00Z",
-  "artifact": "QuietLink v0.3.60"
+  "status": "partial",
+  "task": "Collect exact video transform evidence from both phones",
+  "summary": "v0.3.60 built, signed, tested, and published successfully. Human test: save working inline/fullscreen profiles, export profiles or log+profiles locally from chat/Developer tools, then send the .txt files back for root-cause rotation/aspect analysis.",
+  "updated_at": "2026-09-23T18:20:00Z",
+  "artifact": "QuietLink v0.3.60 APK"
 }
