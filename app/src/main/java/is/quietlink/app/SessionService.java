@@ -2500,7 +2500,7 @@ public final class SessionService extends Service {
 
                 ch.sendControl("CHAT:FILE2_BEGIN|" + transferId + "|"
                         + encodedName + "|" + raw.length + "|"
-                        + wire.length + "|" + rawDigest + "|GZIP");
+                        + wire.length + "|" + rawDigest + "|GZIP|V2");
 
                 int chunks = 0;
                 int lastPercent = -1;
