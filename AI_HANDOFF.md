@@ -168,7 +168,10 @@ Internet-path recovery still needs to become transport-independent.
 - First stable release built by normal CI with only the secret-held v2 signing key and public Android old→v2 signing lineage.
 - versionCode 59 / versionName 0.3.47.
 - Old keystore/password are absent from every live branch tip and no longer used by normal CI.
-- Next action is device confirmation that v0.3.47 updates in place on both existing installs, then force-rewrite every live branch to a clean root commit and rerun the full-history credential audit until zero findings remain.
+- Both existing phones successfully updated in place to v0.3.47.
+- All five live branches were force-rewritten to a sanitized root; legacy build/source artifacts were purged.
+- The post-purge full reachable-history audit returned `RESULT: no credential-pattern findings`.
+- Old orphaned GitHub commit objects may remain directly addressable by exact SHA until GitHub garbage collection/support removal, but no live ref reaches them and the old signer is permanently retired.
 
 ## v0.3.46 — Signing-key migration bridge
 
