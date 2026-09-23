@@ -43,6 +43,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     private FrameLayout activeInlineVideoFrame;
     private LinearLayout floatingVideoControls;
     private View fullscreenBackButton;
+    private View fullscreenRotateButton;
     private final List<View> fullscreenHiddenViews = new ArrayList<>();
     private final List<Integer> fullscreenHiddenVisibility = new ArrayList<>();
     private LinearLayout.LayoutParams savedInlineVideoLayout;
@@ -1317,17 +1318,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             } catch (Exception ignored) {}
         }
 
-        if (remoteVideoTexture != null) {
-            remoteVideoTexture.post(() ->
-                    applyVideoTextureTransform(remoteVideoTexture,
-                            SessionBus.remoteVideoRotation, false, false));
-        }
-        if (localVideoTexture != null) {
-            localVideoTexture.post(() ->
-                    applyVideoTextureTransform(localVideoTexture,
-                            SessionBus.localVideoRotation, true, false));
-        }
-        updateLocalPreviewLayout();
+        refreshVideoTransformsForCurrentLayout();
         updateH264PictureInPictureAspect();
     }
 
@@ -2687,6 +2678,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         videoControlsVisible = true;
         setFullscreenVideoControlsVisible(true);
         updateLocalPreviewLayout();
+        videoFrame.post(this::refreshVideoTransformsForCurrentLayout);
     }
 
     private void exitVideoFullscreenInPlace() {
@@ -2700,6 +2692,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             }
             if (fullscreenBackButton != null) {
                 try { videoFrame.removeView(fullscreenBackButton); } catch (Exception ignored) {}
+            }
+            if (fullscreenRotateButton != null) {
+                try { videoFrame.removeView(fullscreenRotateButton); } catch (Exception ignored) {}
             }
             if (savedInlineVideoLayout != null) {
                 videoFrame.setLayoutParams(new LinearLayout.LayoutParams(savedInlineVideoLayout));
@@ -2721,10 +2716,12 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
         floatingVideoControls = null;
         fullscreenBackButton = null;
+        fullscreenRotateButton = null;
         fullscreenVideoRoot = null;
         videoControlsVisible = true;
         setFullscreenVideoControlsVisible(true);
         updateLocalPreviewLayout();
+        if (videoFrame != null) videoFrame.post(this::refreshVideoTransformsForCurrentLayout);
         QuietLog.log("UI", "video_fullscreen_restored", "surfaces_preserved=1");
     }
 
@@ -2811,6 +2808,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 dp(46),dp(46),Gravity.START | Gravity.TOP);
         backLp.setMargins(dp(12),dp(12),dp(12),dp(12));
         frame.addView(back, backLp);
+        installFullscreenRotateButton(frame);
     }
 
     private void installBabyParentFullscreenControls(FrameLayout frame) {
@@ -3005,6 +3003,20 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 -2,-2,Gravity.START | Gravity.TOP);
         backLp.setMargins(dp(10),dp(10),dp(10),dp(10));
         frame.addView(back, backLp);
+        installFullscreenRotateButton(frame);
+    }
+
+    private void installFullscreenRotateButton(FrameLayout frame) {
+        if (!devUnlocked || frame == null) return;
+        Button rotate = secondary("ROTATE");
+        rotate.setTextSize(9);
+        rotate.setContentDescription("Open compact video rotation controls");
+        rotate.setOnClickListener(v -> showQuickRotationPanel());
+        fullscreenRotateButton = rotate;
+        FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(
+                dp(76), dp(40), Gravity.END | Gravity.TOP);
+        p.setMargins(dp(10),dp(10),dp(10),dp(10));
+        frame.addView(rotate, p);
     }
 
     private void showFullscreenVideoSession(String code, boolean host) {
@@ -3159,22 +3171,39 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         return r == 90 || r == 270;
     }
 
-    private FrameLayout.LayoutParams makeInlinePreviewLayoutParams() {
+    private int[] localPreviewBoxDp() {
         boolean portrait = localPreviewIsPortrait();
+        int mode = RotationLabConfig.localAspect(this);
+        float ratio = RotationLabConfig.aspectRatio(mode);
+        int longSide = 160;
+        int shortSide = Math.max(72, Math.round(longSide / Math.max(1f, ratio)));
+
+        if (mode == RotationLabConfig.ASPECT_1_1) {
+            longSide = 128;
+            shortSide = 128;
+        }
+        if (RotationLabConfig.stretchAspect(mode)) {
+            shortSide = 90;
+            longSide = 160;
+        }
+
+        return portrait
+                ? new int[] {shortSide, longSide}
+                : new int[] {longSide, shortSide};
+    }
+
+    private FrameLayout.LayoutParams makeInlinePreviewLayoutParams() {
+        int[] box = localPreviewBoxDp();
         FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(
-                dp(portrait ? 90 : 160),
-                dp(portrait ? 160 : 90),
-                Gravity.END | Gravity.BOTTOM);
+                dp(box[0]), dp(box[1]), Gravity.END | Gravity.BOTTOM);
         p.setMargins(dp(8),dp(8),dp(8),dp(8));
         return p;
     }
 
     private FrameLayout.LayoutParams makeFullscreenPreviewLayoutParams() {
-        boolean portrait = localPreviewIsPortrait();
-        int width = dp(portrait ? 90 : 160);
-        int height = dp(portrait ? 160 : 90);
+        int[] box = localPreviewBoxDp();
         FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(
-                width, height, Gravity.END | Gravity.TOP);
+                dp(box[0]), dp(box[1]), Gravity.END | Gravity.TOP);
         p.setMargins(dp(10),dp(10),dp(10),dp(10));
         return p;
     }
@@ -3217,6 +3246,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         }
         if (fullscreenBackButton != null) {
             fullscreenBackButton.setVisibility(visible ? View.VISIBLE : View.GONE);
+        }
+        if (fullscreenRotateButton != null) {
+            fullscreenRotateButton.setVisibility(visible ? View.VISIBLE : View.GONE);
         }
         if (videoStateOverlay != null) {
             videoStateOverlay.setVisibility(visible ? View.VISIBLE : View.GONE);
@@ -3546,7 +3578,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
         localPreview = null;
         localVideoTexture = null;
+        installFullscreenRotateButton(frame);
         setContentView(frame);
+        frame.post(this::refreshVideoTransformsForCurrentLayout);
     }
 
     private void showBlackScreen(String code, boolean host) {
@@ -3659,6 +3693,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         activeInlineVideoFrame = null;
         floatingVideoControls = null;
         fullscreenBackButton = null;
+        fullscreenRotateButton = null;
         fullscreenHiddenViews.clear();
         fullscreenHiddenVisibility.clear();
     }
@@ -3692,21 +3727,39 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                             + " front=" + (SessionBus.localCameraFront ? 1 : 0));
         }
         boolean quarterTurn = drawRotation == 90 || drawRotation == 270;
-        float effectiveSourceWidth = quarterTurn ? H264Codec.HEIGHT : H264Codec.WIDTH;
-        float effectiveSourceHeight = quarterTurn ? H264Codec.WIDTH : H264Codec.HEIGHT;
-
-        float scale = crop
-                ? Math.max(width / effectiveSourceWidth, height / effectiveSourceHeight)
-                : Math.min(width / effectiveSourceWidth, height / effectiveSourceHeight);
-        float displayedWidth = effectiveSourceWidth * scale;
-        float displayedHeight = effectiveSourceHeight * scale;
-        float preRotateWidth = quarterTurn ? displayedHeight : displayedWidth;
-        float preRotateHeight = quarterTurn ? displayedWidth : displayedHeight;
+        int aspectMode = mirror
+                ? RotationLabConfig.localAspect(this)
+                : (isFullscreenVideoRendering()
+                    ? RotationLabConfig.fullscreenAspect(this)
+                    : RotationLabConfig.remoteAspect(this));
 
         float cx = width / 2f;
         float cy = height / 2f;
         android.graphics.Matrix matrix = new android.graphics.Matrix();
-        matrix.setScale(preRotateWidth / width, preRotateHeight / height, cx, cy);
+
+        if (RotationLabConfig.stretchAspect(aspectMode)) {
+            // Deliberate diagnostic option: fill the target rectangle even if
+            // that changes proportions. Useful for confirming whether the
+            // device/Surface pipeline itself is pre-stretching the camera.
+            float preRotateWidth = quarterTurn ? height : width;
+            float preRotateHeight = quarterTurn ? width : height;
+            matrix.setScale(preRotateWidth / width, preRotateHeight / height, cx, cy);
+        } else {
+            float ratio = RotationLabConfig.aspectRatio(aspectMode);
+            float sourceWidth = ratio * 1000f;
+            float sourceHeight = 1000f;
+            float effectiveSourceWidth = quarterTurn ? sourceHeight : sourceWidth;
+            float effectiveSourceHeight = quarterTurn ? sourceWidth : sourceHeight;
+
+            float scale = crop
+                    ? Math.max(width / effectiveSourceWidth, height / effectiveSourceHeight)
+                    : Math.min(width / effectiveSourceWidth, height / effectiveSourceHeight);
+            float displayedWidth = effectiveSourceWidth * scale;
+            float displayedHeight = effectiveSourceHeight * scale;
+            float preRotateWidth = quarterTurn ? displayedHeight : displayedWidth;
+            float preRotateHeight = quarterTurn ? displayedWidth : displayedHeight;
+            matrix.setScale(preRotateWidth / width, preRotateHeight / height, cx, cy);
+        }
         matrix.postRotate(drawRotation, cx, cy);
         if (drawMirror) matrix.postScale(-1f, 1f, cx, cy);
 
@@ -3714,6 +3767,24 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         view.setScaleX(1f);
         view.setScaleY(1f);
         view.setTransform(matrix);
+    }
+
+    private boolean isFullscreenVideoRendering() {
+        return videoFullscreenActive || (fullscreenVideoRoot != null && root == null);
+    }
+
+    private void refreshVideoTransformsForCurrentLayout() {
+        updateLocalPreviewLayout();
+        if (remoteVideoTexture != null) {
+            remoteVideoTexture.post(() ->
+                    applyVideoTextureTransform(remoteVideoTexture,
+                            SessionBus.remoteVideoRotation, false, false));
+        }
+        if (localVideoTexture != null) {
+            localVideoTexture.post(() ->
+                    applyVideoTextureTransform(localVideoTexture,
+                            SessionBus.localVideoRotation, true, false));
+        }
     }
 
     private void updateH264PictureInPictureAspect() {
