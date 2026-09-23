@@ -2228,6 +2228,15 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                         + " internet_allowed=1");
         pendingHost = host; pendingCode = code; pendingMode = requestedMode;
         List<String> missing = missingPermissions(requestedMode, host);
+
+        // Wi-Fi Direct is an optional CODE transport, not a prerequisite for
+        // internet calling. Ask for its runtime permission when Wi-Fi is on,
+        // but the request result never blocks CODE from starting if denied.
+        String optionalP2p = optionalWifiDirectPermission();
+        if (optionalP2p != null && !missing.contains(optionalP2p)) {
+            missing.add(optionalP2p);
+        }
+
         if (!missing.isEmpty()) {
             requestPermissions(missing.toArray(new String[0]), 42);
             return;
@@ -2251,9 +2260,12 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == 42 && pendingHost != null && pendingCode != null) {
             List<String> missing = missingPermissions(pendingMode, pendingHost);
-            if (missing.isEmpty()) launchSession(pendingHost, pendingCode, pendingMode);
-            else {
-                Toast.makeText(this, "QuietLink needs the requested nearby/microphone/camera permissions for this mode", Toast.LENGTH_LONG).show();
+            if (missing.isEmpty()) {
+                // Nearby Wi-Fi may have been denied; that only disables the
+                // optional Wi-Fi Direct fallback. Internet/LAN CODE still starts.
+                launchSession(pendingHost, pendingCode, pendingMode);
+            } else {
+                Toast.makeText(this, "QuietLink needs the microphone/camera permission for this mode", Toast.LENGTH_LONG).show();
                 pendingHost = null; pendingCode = null;
             }
         } else if (requestCode == 43) {
@@ -4365,6 +4377,18 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) p.add(Manifest.permission.POST_NOTIFICATIONS);
         } else if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) p.add(Manifest.permission.ACCESS_FINE_LOCATION);
         if (!p.isEmpty()) requestPermissions(p.toArray(new String[0]), 41);
+    }
+
+    private String optionalWifiDirectPermission() {
+        if (!isWifiRadioEnabled()) return null;
+        if (Build.VERSION.SDK_INT >= 33) {
+            return checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES)
+                    == PackageManager.PERMISSION_GRANTED
+                    ? null : Manifest.permission.NEARBY_WIFI_DEVICES;
+        }
+        return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED
+                ? null : Manifest.permission.ACCESS_FINE_LOCATION;
     }
 
     private List<String> missingPermissions(int mode, boolean isHost) {
