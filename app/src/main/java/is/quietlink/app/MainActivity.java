@@ -240,9 +240,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 if (localVideoTexture != null) {
                     localVideoTexture.post(() ->
                             applyVideoTextureTransform(localVideoTexture,
-                                    SessionBus.localVideoRotation, true, true));
+                                    SessionBus.localVideoRotation, true, false));
                 }
-                updateFullscreenLocalPreviewLayout();
+                updateLocalPreviewLayout();
             }
         }
     }
@@ -842,7 +842,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             String[] options = {
                     "Live diagnostics",
                     "H.264 codec info",
-                    "Video rotation lab",
+                    "ROTATE ONLY • compact live panel",
+                    "Video rotation lab • full",
                     "Report log to GitHub",
                     "Export privacy-safe log",
                     "Clear diagnostic log"
@@ -852,9 +853,10 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     .setItems(options, (dialog, which) -> {
                         if (which == 0) showReliabilityDiagnostics();
                         else if (which == 1) showH264CodecInfo();
-                        else if (which == 2) showVideoRotationLab();
-                        else if (which == 3) reportDiagnosticLogToGitHub();
-                        else if (which == 4) exportDiagnosticLog();
+                        else if (which == 2) showQuickRotationPanel();
+                        else if (which == 3) showVideoRotationLab();
+                        else if (which == 4) reportDiagnosticLogToGitHub();
+                        else if (which == 5) exportDiagnosticLog();
                         else {
                             QuietLog.clear(this);
                             Toast.makeText(this, "Diagnostic log cleared", Toast.LENGTH_SHORT).show();
@@ -872,7 +874,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 "Dummy Baby • Baby Station",
                 "Dummy Sleeping Baby • Parent Station",
                 "H.264 codec info",
-                "Video rotation lab",
+                "ROTATE ONLY • compact live panel",
+                "Video rotation lab • full",
                 "Live diagnostics",
                 "Report log to GitHub",
                 "Online rendezvous test setup",
@@ -889,11 +892,12 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     else if (which == 3) startDummySession(SessionService.MODE_BABY, true, false);
                     else if (which == 4) startDummySession(SessionService.MODE_BABY, false, true);
                     else if (which == 5) showH264CodecInfo();
-                    else if (which == 6) showVideoRotationLab();
-                    else if (which == 7) showReliabilityDiagnostics();
-                    else if (which == 8) reportDiagnosticLogToGitHub();
-                    else if (which == 9) showOnlineRendezvousTestSetup();
-                    else if (which == 10) exportDiagnosticLog();
+                    else if (which == 6) showQuickRotationPanel();
+                    else if (which == 7) showVideoRotationLab();
+                    else if (which == 8) showReliabilityDiagnostics();
+                    else if (which == 9) reportDiagnosticLogToGitHub();
+                    else if (which == 10) showOnlineRendezvousTestSetup();
+                    else if (which == 11) exportDiagnosticLog();
                     else {
                         QuietLog.clear(this);
                         Toast.makeText(this, "Diagnostic log cleared", Toast.LENGTH_SHORT).show();
@@ -905,6 +909,183 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
     private interface RotationLabChoice {
         void apply(int index);
+    }
+
+    private void showQuickRotationPanel() {
+        if (!devUnlocked) return;
+
+        final android.app.Dialog dialog = new android.app.Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        LinearLayout box = column();
+        box.setPadding(dp(10),dp(8),dp(10),dp(10));
+        box.setBackground(makeRound(Color.rgb(38,40,44),18));
+        scroll.addView(box);
+        dialog.setContentView(scroll);
+
+        populateQuickRotationPanel(box, dialog);
+
+        dialog.setOnShowListener(d -> {
+            Window w = dialog.getWindow();
+            if (w == null) return;
+            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            w.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            w.setGravity(Gravity.BOTTOM);
+            boolean landscape = getResources().getConfiguration().orientation
+                    == Configuration.ORIENTATION_LANDSCAPE;
+            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
+                    dp(landscape ? 250 : 340));
+            View decor = w.getDecorView();
+            decor.setPadding(dp(6),0,dp(6),dp(6));
+        });
+        dialog.show();
+    }
+
+    private void populateQuickRotationPanel(LinearLayout box,
+                                            android.app.Dialog dialog) {
+        if (box == null) return;
+        box.removeAllViews();
+
+        LinearLayout header = row();
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = text("ROTATE ONLY", 14, Color.WHITE, true);
+        header.addView(title, new LinearLayout.LayoutParams(0,-2,1f));
+
+        Button full = secondary("FULL LAB");
+        full.setTextSize(9);
+        full.setOnClickListener(v -> {
+            dialog.dismiss();
+            showVideoRotationLab();
+        });
+        header.addView(full, new LinearLayout.LayoutParams(dp(84),dp(34)));
+
+        Button close = secondary("✕");
+        close.setTextSize(13);
+        close.setOnClickListener(v -> dialog.dismiss());
+        LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(dp(42),dp(34));
+        closeLp.setMargins(dp(5),0,0,0);
+        header.addView(close, closeLp);
+        box.addView(header, lp(-1,dp(36),0,0,0,3));
+
+        TextView current = text(
+                "TX " + RotationLabConfig.forcedLabel(RotationLabConfig.forcedTxRotation(this))
+                        + "  •  RX "
+                        + RotationLabConfig.remoteModeLabel(RotationLabConfig.remoteMode(this))
+                        + " +" + RotationLabConfig.remoteOffset(this) + "°"
+                        + "  •  " + RotationLabConfig.previewLabel(
+                            RotationLabConfig.localPreviewMode(this)),
+                9, Color.LTGRAY, false);
+        box.addView(current, lp(-1,-2,0,0,0,4));
+
+        addQuickRotationChoices(box, "SENDER",
+                new String[]{"AUTO","0°","90°","180°","270°"},
+                forcedRotationChoiceIndex(),
+                index -> RotationLabConfig.setForcedTxRotation(
+                        this, index == 0 ? -1 : (index - 1) * 90),
+                dialog);
+
+        addQuickRotationChoices(box, "REMOTE OFFSET",
+                new String[]{"0°","90°","180°","270°"},
+                RotationLabConfig.remoteOffset(this) / 90,
+                index -> RotationLabConfig.setRemoteOffset(this, index * 90),
+                dialog);
+
+        addQuickRotationChoices(box, "REMOTE DIRECTION",
+                new String[]{"DIRECT","INVERSE"},
+                RotationLabConfig.remoteMode(this),
+                index -> RotationLabConfig.setRemoteMode(this, index),
+                dialog);
+
+        addQuickRotationChoices(box, "FORMULA",
+                new String[]{"QL","ANDROID","WEBRTC","SENSOR"},
+                RotationLabConfig.txFormula(this),
+                index -> RotationLabConfig.setTxFormula(this, index),
+                dialog);
+
+        addQuickRotationChoices(box, "PREVIEW",
+                new String[]{"STREAM","DISPLAY","NONE","INVERSE"},
+                RotationLabConfig.localPreviewMode(this),
+                index -> RotationLabConfig.setLocalPreviewMode(this, index),
+                dialog);
+
+        addQuickRotationChoices(box, "SOURCE",
+                new String[]{"DISPLAY","PHYSICAL"},
+                RotationLabConfig.rotationSource(this),
+                index -> RotationLabConfig.setRotationSource(this, index),
+                dialog);
+
+        LinearLayout toggles = row();
+        toggles.setGravity(Gravity.CENTER_VERTICAL);
+        toggles.addView(rotationQuickToggle(
+                "FRAME TX", RotationLabConfig.sendFrameRotation(this), v -> {
+                    RotationLabConfig.setSendFrameRotation(
+                            this, !RotationLabConfig.sendFrameRotation(this));
+                    applyRotationLabNow();
+                    populateQuickRotationPanel(box, dialog);
+                }), new LinearLayout.LayoutParams(0,dp(34),1f));
+        LinearLayout.LayoutParams toggleLp = new LinearLayout.LayoutParams(0,dp(34),1f);
+        toggleLp.setMargins(dp(4),0,0,0);
+        toggles.addView(rotationQuickToggle(
+                "FRAME RX", RotationLabConfig.acceptFrameRotation(this), v -> {
+                    RotationLabConfig.setAcceptFrameRotation(
+                            this, !RotationLabConfig.acceptFrameRotation(this));
+                    applyRotationLabNow();
+                    populateQuickRotationPanel(box, dialog);
+                }), toggleLp);
+        LinearLayout.LayoutParams mirrorLp = new LinearLayout.LayoutParams(0,dp(34),1f);
+        mirrorLp.setMargins(dp(4),0,0,0);
+        toggles.addView(rotationQuickToggle(
+                "MIRROR", RotationLabConfig.mirrorLocalPreview(this), v -> {
+                    RotationLabConfig.setMirrorLocalPreview(
+                            this, !RotationLabConfig.mirrorLocalPreview(this));
+                    applyRotationLabNow();
+                    populateQuickRotationPanel(box, dialog);
+                }), mirrorLp);
+        box.addView(toggles, lp(-1,dp(34),0,4,0,0));
+    }
+
+    private Button rotationQuickToggle(String label,
+                                       boolean selected,
+                                       View.OnClickListener listener) {
+        Button b = selected ? primary(label + " ON") : secondary(label + " OFF");
+        b.setTextSize(8);
+        b.setMinHeight(0);
+        b.setPadding(dp(3),0,dp(3),0);
+        b.setOnClickListener(listener);
+        return b;
+    }
+
+    private void addQuickRotationChoices(LinearLayout box,
+                                         String label,
+                                         String[] choices,
+                                         int selected,
+                                         RotationLabChoice choice,
+                                         android.app.Dialog dialog) {
+        TextView section = text(label, 8, muted(), true);
+        box.addView(section, lp(-1,-2,0,3,0,1));
+
+        LinearLayout line = row();
+        line.setGravity(Gravity.CENTER);
+        for (int i = 0; i < choices.length; i++) {
+            final int index = i;
+            Button b = i == selected ? primary(choices[i]) : secondary(choices[i]);
+            b.setTextSize(8);
+            b.setMinHeight(0);
+            b.setPadding(dp(2),0,dp(2),0);
+            b.setOnClickListener(v -> {
+                try { choice.apply(index); } catch (Exception ignored) {}
+                applyRotationLabNow();
+                // Rebuild the contents inside the SAME dialog. The panel never
+                // closes or jumps back to the developer menu during iteration.
+                populateQuickRotationPanel(box, dialog);
+            });
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,dp(32),1f);
+            if (i > 0) p.setMargins(dp(3),0,0,0);
+            line.addView(b,p);
+        }
+        box.addView(line, lp(-1,dp(32),0,0,0,2));
     }
 
     private void showVideoRotationLab() {
@@ -2476,6 +2657,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         fullscreenVideoRoot = null;
         videoControlsVisible = true;
         setFullscreenVideoControlsVisible(true);
+        updateLocalPreviewLayout();
         QuietLog.log("UI", "video_fullscreen_restored", "surfaces_preserved=1");
     }
 
@@ -2795,7 +2977,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         if (!devDummySession) attachLocalVideoTexture(previewFrame);
 
         localPreview = new ImageView(this);
-        localPreview.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        localPreview.setScaleType(ImageView.ScaleType.FIT_CENTER);
         localPreview.setBackgroundColor(Color.TRANSPARENT);
         previewFrame.addView(localPreview, new FrameLayout.LayoutParams(-1,-1));
         frame.addView(previewFrame, makeFullscreenPreviewLayoutParams());
@@ -2902,34 +3084,47 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         requestVideoWakeRefresh();
     }
 
+    private boolean localPreviewIsPortrait() {
+        int r = RotationLabConfig.enabled(this)
+                ? RotationLabConfig.resolveLocalPreviewRotation(
+                    this, SessionBus.localVideoRotation)
+                : RotationLabConfig.normalize(SessionBus.localVideoRotation);
+        return r == 90 || r == 270;
+    }
+
     private FrameLayout.LayoutParams makeInlinePreviewLayoutParams() {
-        boolean landscape = getResources().getConfiguration().orientation
-                == Configuration.ORIENTATION_LANDSCAPE;
+        boolean portrait = localPreviewIsPortrait();
         FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(
-                dp(landscape ? 160 : 90),
-                dp(landscape ? 90 : 160),
+                dp(portrait ? 90 : 160),
+                dp(portrait ? 160 : 90),
                 Gravity.END | Gravity.BOTTOM);
         p.setMargins(dp(8),dp(8),dp(8),dp(8));
         return p;
     }
 
     private FrameLayout.LayoutParams makeFullscreenPreviewLayoutParams() {
-        boolean landscape = getResources().getConfiguration().orientation
-                == Configuration.ORIENTATION_LANDSCAPE;
-        int width = dp(landscape ? 160 : 90);
-        int height = dp(landscape ? 90 : 160);
+        boolean portrait = localPreviewIsPortrait();
+        int width = dp(portrait ? 90 : 160);
+        int height = dp(portrait ? 160 : 90);
         FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(
                 width, height, Gravity.END | Gravity.TOP);
         p.setMargins(dp(10),dp(10),dp(10),dp(10));
         return p;
     }
 
-    private void updateFullscreenLocalPreviewLayout() {
+    private void updateLocalPreviewLayout() {
         FrameLayout preview = fullscreenLocalPreviewFrame;
         if (preview == null || preview.getParent() == null) return;
-        FrameLayout.LayoutParams old = (FrameLayout.LayoutParams) preview.getLayoutParams();
-        FrameLayout.LayoutParams fresh = makeFullscreenPreviewLayoutParams();
-        fresh.topMargin = old.topMargin;
+
+        boolean full = videoFullscreenActive
+                || (fullscreenVideoRoot != null && root == null);
+        FrameLayout.LayoutParams old =
+                (FrameLayout.LayoutParams) preview.getLayoutParams();
+        FrameLayout.LayoutParams fresh = full
+                ? makeFullscreenPreviewLayoutParams()
+                : makeInlinePreviewLayoutParams();
+
+        if (full) fresh.topMargin = old.topMargin;
         preview.setLayoutParams(fresh);
     }
 
@@ -3355,7 +3550,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     try { old.release(); } catch (Exception ignored) {}
                 }
                 SessionBus.localVideoSurface(surface);
-                applyVideoTextureTransform(localVideoTexture, SessionBus.localVideoRotation, true, true);
+                applyVideoTextureTransform(localVideoTexture, SessionBus.localVideoRotation, true, false);
             }
 
             @Override public void onSurfaceTextureSizeChanged(android.graphics.SurfaceTexture texture, int width, int height) {
@@ -3902,7 +4097,10 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
     @Override public void onLocalVideoRotation(int degrees) {
         QuietLog.log("UI", "local_rotation", "degrees=" + degrees);
-        runOnUiThread(() -> applyVideoTextureTransform(localVideoTexture, degrees, true, true));
+        runOnUiThread(() -> {
+            updateLocalPreviewLayout();
+            applyVideoTextureTransform(localVideoTexture, degrees, true, false);
+        });
     }
 
     @Override public void onRemoteVideo(android.graphics.Bitmap b) {
