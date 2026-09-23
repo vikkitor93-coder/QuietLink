@@ -146,6 +146,7 @@ public final class SessionBus {
     public static volatile Surface localVideoSurface;
     public static volatile int remoteVideoRotation = 0;
     public static volatile int localVideoRotation = 0;
+    public static volatile boolean localCameraFront = true;
     public static volatile boolean remoteVideoEnabled = true;
     public static volatile Bitmap latestVideo;
     public static volatile Bitmap latestLocalVideo;
@@ -260,6 +261,14 @@ public final class SessionBus {
         if (l != null) l.onLocalVideoRotation(localVideoRotation);
     }
 
+    public static void localCameraFacing(boolean front) {
+        localCameraFront = front;
+        // Re-use the rotation callback to make the local preview transform
+        // immediately re-evaluate its developer mirror setting.
+        Listener l = listener;
+        if (l != null) l.onLocalVideoRotation(localVideoRotation);
+    }
+
     public static void status(String s) {
         latestStatus = s;
         Listener l = listener;
@@ -320,6 +329,7 @@ public final class SessionBus {
         remoteVideoEnabled = true;
         remoteVideoRotation = 0;
         localVideoRotation = 0;
+        localCameraFront = true;
         latestStatus = (reason == null || reason.trim().isEmpty())
                 ? "Connection interrupted • reconnecting…"
                 : reason;
