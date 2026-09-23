@@ -308,3 +308,19 @@
 257. Sender section clarity: Window 2 must visibly separate the controls that affect the local mini preview from the **SEND THIS CAMERA TO THE OTHER PHONE** controls.
 258. Existing v0.3.56 internet regression checkpoint remains required: Wi-Fi-off/mobile-data CODE must start without a Wi-Fi/hotspot prerequisite.
 
+259. v0.3.58 update continuity: install on both phones through CHECK UPDATE from v0.3.57.
+260. Scrollable aspect selector: open VIDEO TUNE -> Window 1 and Window 2 aspect controls on both the newest and older phone; the ratio list must scroll through Auto, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 1:1 and Stretch.
+261. Profile slots: verify separate save state for VIDEO INLINE, VIDEO FULLSCREEN, BABY INLINE and BABY FULLSCREEN.
+262. Inline/fullscreen independence: choose visibly different Window 1 rotation/aspect settings inline vs fullscreen, SAVE CURRENT in each slot, leave/re-enter each presentation and verify the matching saved profile auto-loads.
+263. Video/Baby independence: save a VIDEO INLINE profile, then a different BABY INLINE profile; switching modes must load the correct mode-specific profile without overwriting the other.
+264. Profile content: verify save/load includes Window 1 direction/offset/aspect/frame RX, Window 2 preview base/offset/aspect/mirror, sender rotation/formula/source/frame TX and codec experiment state.
+265. Profile report: SHOW / COPY PROFILE must produce a selectable/copyable summary that accurately states Window 1, Window 2 and sender values without identifiers, network addresses, codes or keys.
+266. Chat diagnostic UI: with developer mode unlocked and a live connection, chat must show **SEND MY LOG**.
+267. Diagnostic attachment send: tap SEND MY LOG on Phone A; Phone B must see one QuietLink-diagnostic-log.txt attachment, not base64/chunk messages. Phone A must also show the sent .txt attachment.
+268. Diagnostic attachment open: tapping the attachment must open readable UTF-8 diagnostic text inside QuietLink.
+269. Diagnostic attachment privacy: received text must preserve QuietLog's defensive exclusions for IPs, peer/device names, IDs, fingerprints/keys, room codes, chat contents and audio/video contents.
+270. Diagnostic attachment integrity: transfers are SHA-256 verified; malformed/out-of-order/oversized or digest-mismatched transfers must never appear as a completed attachment.
+271. Diagnostic attachment bounds: a privacy-safe log up to the configured 900 KiB transfer limit must use bounded 4 KiB chunks and remain below CryptoChannel's encrypted chat-frame plaintext limit.
+272. Bad-link behavior: interrupt a log transfer mid-send. The partial file must not appear as a completed attachment; ordinary chat/control/session recovery must remain functional.
+273. Wi-Fi Direct regression: with no shared router and required nearby permission granted, CODE should be allowed to reach Android Wi-Fi Direct fallback without requiring a manually-created hotspot; QL5 authentication remains mandatory after the P2P group forms.
+
