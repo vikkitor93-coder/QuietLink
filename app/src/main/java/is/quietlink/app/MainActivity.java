@@ -233,17 +233,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             try { startService(new Intent(this, SessionService.class).setAction(SessionService.ACTION_REFRESH_ORIENTATION)); }
             catch (Exception ignored) {}
             if (Build.VERSION.SDK_INT < 26 || !isInPictureInPictureMode()) {
-                if (remoteVideoTexture != null) {
-                    remoteVideoTexture.post(() ->
-                            applyVideoTextureTransform(remoteVideoTexture,
-                                    SessionBus.remoteVideoRotation, false, false));
-                }
-                if (localVideoTexture != null) {
-                    localVideoTexture.post(() ->
-                            applyVideoTextureTransform(localVideoTexture,
-                                    SessionBus.localVideoRotation, true, false));
-                }
-                updateLocalPreviewLayout();
+                refreshVideoTransformsForCurrentLayout();
             }
         }
     }
@@ -3959,12 +3949,24 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
     private List<String> missingPermissions(int mode, boolean isHost) {
         List<String> p = new ArrayList<>();
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) p.add(Manifest.permission.RECORD_AUDIO);
-        if (isHost && mode != SessionService.MODE_VOICE && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) p.add(Manifest.permission.CAMERA);
-        if (Build.VERSION.SDK_INT >= 33) {
-            if (checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED) p.add(Manifest.permission.NEARBY_WIFI_DEVICES);
-            if (mode == SessionService.MODE_SLEEPING_BABY && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) p.add(Manifest.permission.POST_NOTIFICATIONS);
-        } else if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) p.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        // CODE sessions can run entirely over the internet. Nearby Wi-Fi /
+        // location permissions improve local discovery and Wi-Fi Direct, but
+        // they are not prerequisites for starting the secure CODE session.
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            p.add(Manifest.permission.RECORD_AUDIO);
+        }
+        if (isHost && mode != SessionService.MODE_VOICE
+                && checkSelfPermission(Manifest.permission.CAMERA)
+                != PackageManager.PERMISSION_GRANTED) {
+            p.add(Manifest.permission.CAMERA);
+        }
+        if (Build.VERSION.SDK_INT >= 33
+                && mode == SessionService.MODE_SLEEPING_BABY
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            p.add(Manifest.permission.POST_NOTIFICATIONS);
+        }
         return p;
     }
 
