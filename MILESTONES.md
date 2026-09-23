@@ -1,7 +1,7 @@
 # QuietLink milestones
 
 Updated: 2026-09-23  
-Current release: **v0.3.56**  
+Current release: **v0.3.57**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -54,6 +54,10 @@ Source of truth: **GitHub main**
    - ✅ v0.3.56 CODE no longer blocked by Wi-Fi/hotspot prerequisite
    - ✅ v0.3.56 fullscreen ROTATE access + explicit transform refresh
    - ✅ v0.3.56 Local/Remote/Fullscreen aspect-ratio test controls
+   - ✅ v0.3.57 numbered Window 1/2 calibration UI
+   - ✅ v0.3.57 true portrait aspect ratios including 9:16
+   - ✅ v0.3.57 independent mini-preview rotation offset
+   - ⏳ Human: identify correct Window 1 and Window 2 aspect/rotation settings
    - ⏳ Human: retest Wi-Fi-off mobile-data CODE connection
    - ⏳ Human: identify non-stretched aspect + finish fullscreen landscape rotation matrix
    - ⏳ Human: validate compact panel and landscape-left/right settings on both phones
