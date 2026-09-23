@@ -1889,7 +1889,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     if (needsSharedNetwork) renderJoinTabContent();
                 });
 
-        if (wifiEnabled && !onWifi && needsSharedNetwork) {
+        if (needsSharedNetwork) {
             builder.setNeutralButton("Use Code", (dialog, which) -> {
                 wifiWarningDismissedThisForeground = true;
                 selectJoinTab(TAB_CODE);
