@@ -115,6 +115,14 @@ public final class QuietLog {
         out.append("Excluded by design: IP addresses, peer/device names, device IDs, ")
                 .append("fingerprints/keys, room codes, chat text, audio/video content.\n\n");
 
+        out.append("Saved video calibration profiles:\n");
+        appendProfile(out, context, SessionService.MODE_VIDEO, false);
+        appendProfile(out, context, SessionService.MODE_VIDEO, true);
+        appendProfile(out, context, SessionService.MODE_BABY, false);
+        appendProfile(out, context, SessionService.MODE_BABY, true);
+        out.append('\n');
+
+
         if (app == null) return out.append("(logger unavailable)\n").toString();
         File f = new File(app.getFilesDir(), FILE_NAME);
         if (!f.exists()) return out.append("(no trace entries yet)\n").toString();
@@ -129,6 +137,21 @@ public final class QuietLog {
             out.append("(could not read trace)\n");
         }
         return out.toString();
+    }
+
+    private static void appendProfile(StringBuilder out, Context context,
+                                      int mode, boolean fullscreen) {
+        String label = RotationLabConfig.profileLabel(mode, fullscreen);
+        if (!RotationLabConfig.hasProfile(context, mode, fullscreen)) {
+            out.append("- ").append(label).append(": not saved\n");
+            return;
+        }
+        String summary = RotationLabConfig.profileSummary(context, mode, fullscreen);
+        out.append("- ").append(label).append(": saved\n");
+        String[] lines = summary.split("\\n");
+        for (int i = 1; i < lines.length; i++) {
+            out.append("  ").append(lines[i]).append('\n');
+        }
     }
 
     public static synchronized void clear(Context context) {
