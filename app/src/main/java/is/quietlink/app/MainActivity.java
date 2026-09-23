@@ -1259,6 +1259,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                         + RotationLabConfig.sourceLabel(RotationLabConfig.rotationSource(this)),
                 "Local preview transform • "
                         + RotationLabConfig.previewLabel(RotationLabConfig.localPreviewMode(this)),
+                "Local preview rotation offset • +"
+                        + RotationLabConfig.localPreviewOffset(this) + "°",
                 "Local front mirror • "
                         + (RotationLabConfig.mirrorLocalPreview(this) ? "ON" : "OFF"),
                 "Per-frame H.264 rotation TX • "
@@ -1318,58 +1320,60 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                             },
                             RotationLabConfig.localPreviewMode(this),
                             index -> RotationLabConfig.setLocalPreviewMode(this, index));
-                    else if (which == 4) {
+                    else if (which == 4) showRotationLabChoice(
+                            "Local preview rotation offset",
+                            new String[] {"+0°", "+90°", "+180°", "+270°"},
+                            RotationLabConfig.localPreviewOffset(this) / 90,
+                            index -> RotationLabConfig.setLocalPreviewOffset(this, index * 90));
+                    else if (which == 5) {
                         RotationLabConfig.setMirrorLocalPreview(
                                 this, !RotationLabConfig.mirrorLocalPreview(this));
                         applyRotationLabNow();
                         showVideoRotationLab();
-                    } else if (which == 5) {
+                    } else if (which == 6) {
                         RotationLabConfig.setSendFrameRotation(
                                 this, !RotationLabConfig.sendFrameRotation(this));
                         applyRotationLabNow();
                         showVideoRotationLab();
-                    } else if (which == 6) {
+                    } else if (which == 7) {
                         RotationLabConfig.setAcceptFrameRotation(
                                 this, !RotationLabConfig.acceptFrameRotation(this));
                         applyRotationLabNow();
                         showVideoRotationLab();
-                    } else if (which == 7) showRotationLabChoice(
+                    } else if (which == 8) showRotationLabChoice(
                             "Force H.264 sender rotation",
                             new String[] {"Auto", "0°", "90°", "180°", "270°"},
                             forcedRotationChoiceIndex(),
                             index -> RotationLabConfig.setForcedTxRotation(
                                     this, index == 0 ? -1 : (index - 1) * 90));
-                    else if (which == 8) showRotationLabChoice(
+                    else if (which == 9) showRotationLabChoice(
                             "Remote rotation direction",
                             new String[] {"Direct", "Inverse • 360° − reported"},
                             RotationLabConfig.remoteMode(this),
                             index -> RotationLabConfig.setRemoteMode(this, index));
-                    else if (which == 9) showRotationLabChoice(
+                    else if (which == 10) showRotationLabChoice(
                             "Remote rotation offset",
                             new String[] {"+0°", "+90°", "+180°", "+270°"},
                             RotationLabConfig.remoteOffset(this) / 90,
                             index -> RotationLabConfig.setRemoteOffset(this, index * 90));
-                    else if (which == 10) {
+                    else if (which == 11) {
                         RotationLabConfig.setForceJpeg(
                                 this, !RotationLabConfig.forceJpeg(this));
                         applyRotationLabNow();
                         showVideoRotationLab();
-                    } else if (which == 11) showRotationLabChoice(
+                    } else if (which == 12) showAspectLabChoice(
                             "Local preview aspect",
-                            new String[] {"Auto", "16:9", "4:3", "3:2", "1:1", "Stretch"},
                             RotationLabConfig.localAspect(this),
-                            index -> RotationLabConfig.setLocalAspect(this, index));
-                    else if (which == 12) showRotationLabChoice(
+                            mode -> RotationLabConfig.setLocalAspect(this, mode));
+                    else if (which == 13) showAspectLabChoice(
                             "Remote inline aspect",
-                            new String[] {"Auto", "16:9", "4:3", "3:2", "1:1", "Stretch"},
                             RotationLabConfig.remoteAspect(this),
-                            index -> RotationLabConfig.setRemoteAspect(this, index));
-                    else if (which == 13) showRotationLabChoice(
+                            mode -> RotationLabConfig.setRemoteAspect(this, mode));
+                    else if (which == 14) showAspectLabChoice(
                             "Fullscreen remote aspect",
-                            new String[] {"Auto", "16:9", "4:3", "3:2", "1:1", "Stretch"},
                             RotationLabConfig.fullscreenAspect(this),
-                            index -> RotationLabConfig.setFullscreenAspect(this, index));
-                    else if (which == 14) {
+                            mode -> RotationLabConfig.setFullscreenAspect(this, mode));
+                    else if (which == 15) {
                         showRotationLabInstructions();
                     } else {
                         RotationLabConfig.resetProduction(this);
@@ -1421,6 +1425,27 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 .show();
     }
 
+    private void showAspectLabChoice(String title,
+                                     int selectedMode,
+                                     RotationLabChoice choice) {
+        String[] labels = quickAspectLabels();
+        int[] modes = quickAspectModes();
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(title)
+                .setSingleChoiceItems(
+                        labels,
+                        quickAspectChoiceIndex(selectedMode),
+                        (dialog, which) -> {
+                            int safe = Math.max(0, Math.min(modes.length - 1, which));
+                            try { choice.apply(modes[safe]); } catch (Exception ignored) {}
+                            dialog.dismiss();
+                            applyRotationLabNow();
+                            showVideoRotationLab();
+                        })
+                .setNegativeButton("Back", (dialog, which) -> showVideoRotationLab())
+                .show();
+    }
+
     private int forcedRotationChoiceIndex() {
         int forced = RotationLabConfig.forcedTxRotation(this);
         return forced < 0 ? 0 : (forced / 90) + 1;
@@ -1431,6 +1456,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 "enabled=" + (RotationLabConfig.enabled(this) ? 1 : 0)
                         + " tx=" + RotationLabConfig.txFormula(this)
                         + " preview=" + RotationLabConfig.localPreviewMode(this)
+                        + " preview_offset=" + RotationLabConfig.localPreviewOffset(this)
                         + " remote_mode=" + RotationLabConfig.remoteMode(this)
                         + " remote_offset=" + RotationLabConfig.remoteOffset(this)
                         + " frame_tx=" + (RotationLabConfig.sendFrameRotation(this) ? 1 : 0)
