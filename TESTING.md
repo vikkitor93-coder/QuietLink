@@ -266,3 +266,16 @@
 218. Rotation-lab dialog regression: no device should show only explanatory text with an empty controls area.
 219. Existing v0.3.53 Sleeping Baby confirmation: keep older phone as Baby Station and verify continuous audio still works after updating to v0.3.54.
 
+220. v0.3.55 updater continuity: install on both phones through **CHECK UPDATE** from v0.3.54.
+221. Quick-panel access: during a live Video/Baby session open 🛠 -> **ROTATE ONLY • compact live panel** and verify it appears at the bottom rather than covering most of the video.
+222. Quick-panel persistence: tap several sender/remote/preview options. The same panel must remain open after every tap and must preserve its inner scroll position.
+223. Sender quick choices: Auto / 0° / 90° / 180° / 270° must apply live.
+224. Receiver quick choices: Direct/Inverse and +0°/+90°/+180°/+270° must apply live without reconnecting.
+225. Formula/preview/source quick choices: QL/Android/WebRTC/Sensor, Stream/Display/None/Inverse, and Display/Physical must match the full lab settings.
+226. Frame/mirror quick toggles: per-frame TX, per-frame RX and Mirror must toggle live and visibly update their selected state without dismissing the panel.
+227. Video visibility: while the compact panel is open, enough of the remote/local video must remain visible to judge orientation immediately.
+228. Small self-preview aspect: test portrait and landscape camera output and verify the small local preview preserves facial/object proportions; it may letterbox rather than crop, but must not stretch.
+229. Self-preview rotation sizing: when local preview rotation changes between portrait and landscape quarter turns, the small preview box must switch between portrait-like 90x160 and landscape-like 160x90 proportions.
+230. Fullscreen round trip: enter and leave in-place fullscreen; the small local preview must return to bottom-right inline placement with correct aspect.
+231. Orientation result capture: retain the working portrait settings for each phone and continue landscape-left/landscape-right testing before promoting any experiment to production defaults.
+
