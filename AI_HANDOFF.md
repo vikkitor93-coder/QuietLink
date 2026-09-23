@@ -4,8 +4,8 @@ Updated: **2026-09-23**
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.60 / versionCode 72**  
-Latest release CI: **passed**
+Current release: **v0.3.61 / versionCode 73**  
+Latest release CI: **pending v0.3.61 validation**
 
 ---
 
@@ -162,6 +162,41 @@ Internet-path recovery still needs to become transport-independent.
 ---
 
 # 6. Online P2P work completed
+
+
+## v0.3.61 — Portrait lock + chat attachment download + P2P readiness gate
+
+User supplied two v0.3.60 privacy-safe logs/profiles.
+
+Profile A:
+- display 0, local reported 0, remote reported/resolved 270
+- VIDEO INLINE/FULLSCREEN both: Window 1 Direct +0 Auto; Window 2 Stream +0 9:16 mirror off; Sender forced 0, Current QL, Display, frame TX on.
+
+Profile B:
+- display 0, local reported 0, remote reported 0, resolved remote 270
+- VIDEO INLINE/FULLSCREEN both: Window 1 Direct +270 Auto; Window 2 No rotation +0 9:16 mirror off; Sender Auto, Current QL, Display, frame TX off.
+
+Interpretation:
+- Both phones are now manually correct in portrait, but they achieve that with different sender/receiver corrections.
+- The trace also shows the same front sensor=270 producing different surface rotation results as display rotation changes, reinforcing that the current multiple-transform architecture is not safe to promote to automatic landscape defaults yet.
+- User chose the temporary policy: lock QuietLink to portrait and preserve the calibrated profiles.
+
+Wi-Fi Direct evidence:
+- Host trace: wifi_direct_host_start permission=1 -> state enabled=0 -> createGroup BUSY attempts 0..8.
+- Join trace: wifi_direct_join_start permission=1 -> state enabled=0 -> repeated discovery BUSY; later state changed enabled=1 and discovery immediately succeeded.
+- Therefore the immediate "P2P is off" status was too final and the helper was issuing P2P operations while Android explicitly reported P2P disabled.
+
+Fix:
+- Android 10+ uses requestP2pState before host/join P2P operations.
+- Disabled state waits/rechecks instead of creating BUSY storms.
+- Enabled broadcast releases the pending operation immediately.
+- Older Android gives the registered state receiver time before starting.
+- Status distinguishes Wi-Fi radio off from Android P2P still starting.
+- Other QuietLink paths remain active while P2P waits.
+
+Chat:
+- Received .txt reader now has DOWNLOAD, copying the local cached file through ACTION_CREATE_DOCUMENT.
+
 
 
 ## v0.3.60 — Local export of diagnostic log + calibration profiles
@@ -849,17 +884,17 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: collect exact transform evidence from both phones
+## Primary next checkpoint: validate portrait lock and P2P delayed-enable behavior
 
-After v0.3.60 CI passes:
-1. Update both phones.
-2. Save the working VIDEO INLINE and VIDEO FULLSCREEN profiles on each phone; save Baby profiles too if they differ.
-3. From chat or Developer tools choose **EXPORT PROFILES** and send those .txt files back to the AI.
-4. If a session/network failure is also relevant, export **LOG + PROFILES** from the same phone.
-5. Compare display rotation, reported stream rotation, resolved rotation, sender formula/source, Window 1/2 offsets and aspect choices across old/new phones and inline/fullscreen.
-6. Use that evidence to identify whether the systematic error is camera sensor/display math, encode orientation metadata, TextureView presentation, or a double transform.
-7. Do not promote manual offsets to production defaults until the common underlying rule is understood.
-8. Continue v0.3.59 SEND LOG + PROFILES and Wi-Fi Direct validation in parallel.
+After v0.3.61 CI passes:
+1. Update both phones through CHECK UPDATE.
+2. Confirm existing saved VIDEO profiles remain intact and portrait video is still correct.
+3. Physically rotate both phones landscape-left/right in lobby, inline Video, fullscreen Video and Baby. QuietLink must remain portrait.
+4. Receive a diagnostic .txt in chat, open it, press DOWNLOAD, save it through Android's picker, and verify the saved file can be shared/uploaded normally.
+5. Wi-Fi Direct: Wi-Fi radio ON on both phones, no shared router/hotspot, optional Nearby/Location permission granted.
+6. If Android initially reports P2P disabled, QuietLink should wait rather than flood BUSY. When state becomes enabled, host/join P2P work should begin automatically.
+7. If P2P still never reaches enabled on one phone while Wi-Fi radio is on, export the new log; compare wifi_radio=1 with requestP2pState/broadcast state to determine whether the limitation is framework/OEM rather than QuietLink operation ordering.
+8. Keep portrait lock until a later canonical CameraX/EGL normalization rewrite is proven on both devices.
 
 ---
 
