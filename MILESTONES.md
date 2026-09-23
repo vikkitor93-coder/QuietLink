@@ -1,7 +1,7 @@
 # QuietLink milestones
 
 Updated: 2026-09-23  
-Current release: **v0.3.53**  
+Current release: **v0.3.54**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -48,8 +48,10 @@ Source of truth: **GitHub main**
    - ✅ v0.3.51 developer video rotation lab with live formula/preview/metadata/manual correction matrix
    - ✅ v0.3.52 older-Android documented legacy archive oldest-signer compatibility
    - ✅ v0.3.53 Sleeping Baby role-swap confirmation + source logging
-   - ⏳ Human: use CHECK UPDATE v0.3.52→v0.3.53 on older phone
-   - ⏳ Human: 10-minute Baby Station continuous-audio regression test
+   - ✅ v0.3.54 older-Android rotation-lab list rendering fix
+   - ⏳ Human: verify rotation controls render on older phone
+   - ✅ Human: CHECK UPDATE v0.3.52→v0.3.53 works on older phone
+   - ✅ Human: older-phone Baby Station audio works again
    - ⏳ Human rotation matrix: identify correct front/back portrait/landscape settings on both phones
 
 7. ⏳ Online P2P + rendezvous
