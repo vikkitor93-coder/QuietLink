@@ -180,6 +180,9 @@ public final class QuietLog {
                 .append(RotationLabConfig.resolveRemoteRotation(
                         context, SessionBus.remoteVideoRotation))
                 .append("°\n");
+        out.append("Canonical H.264 rotation active: ")
+                .append(SessionBus.canonicalVideoRotation ? "YES" : "NO")
+                .append("\n");
         out.append("Current tuning: ")
                 .append(RotationLabConfig.summary(context))
                 .append("\n\n");
