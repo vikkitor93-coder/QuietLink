@@ -4,8 +4,8 @@ Updated: **2026-09-23**
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.58 / versionCode 70**  
-Latest release CI: **passed**
+Current release: **v0.3.59 / versionCode 71**  
+Latest release CI: **pending v0.3.59 validation**
 
 ---
 
@@ -162,6 +162,40 @@ Internet-path recovery still needs to become transport-independent.
 ---
 
 # 6. Online P2P work completed
+
+
+## v0.3.59 — Diagnostic transfer crash repair + Wi-Fi Direct regression repair
+
+Human report after v0.3.58:
+- Both QuietLink sides crashed when sending the diagnostic log attachment.
+- The transfer took long enough that the user could not tell whether anything was happening.
+- User wants calibration profiles transferable too unless already included in the log.
+- Wi-Fi Direct has not been working for several updates.
+
+Static root-cause findings / risk removal:
+- v0.3.58 pushed the uncompressed privacy-safe log through many individually flushed encrypted chat frames.
+- Its file-send exception path directly called `handleConnectionLoss()`, so an optional diagnostic-transfer write failure could escalate into full call recovery on the sender and secondary disruption on the peer.
+- v0.3.59 gzip-compresses before transfer, periodically yields between chunk groups, exposes transfer progress, and no longer promotes an optional file-transfer failure into connection loss. Normal heartbeat/control detection remains authoritative.
+- Saved VIDEO/BABY INLINE/FULLSCREEN profile summaries are appended by `QuietLog.exportText()`, so SEND LOG + PROFILES includes them automatically.
+- A privacy-safe uncaught crash fingerprint now records only exception class + first QuietLink code site/line. Exception messages are intentionally excluded.
+
+Wi-Fi Direct regression findings:
+- `WifiDirectHelper` remained real Android WifiP2pManager code, but the v0.3.56 internet CODE permission change removed Nearby/legacy Location from CODE's required list.
+- `requestBasePermissions()` exists but is not called from startup, so devices without a previously granted P2P permission could silently reach WifiDirectHelper.permitted()==false.
+- Join fallback was scheduled exactly once at 8 seconds behind `!connecting.get()`; a transient LAN attempt at that moment permanently skipped P2P for that session.
+- WifiP2pManager.connect failure left `expectedPort > 0`; because failure had no reset callback, later service responses were ignored forever.
+- WifiP2p action failures were otherwise silent and host/group/discovery setup had no meaningful retry strategy.
+
+v0.3.59 fixes:
+- CODE optionally requests Nearby Wi-Fi Devices (Android 13+) or Fine Location (older Android) when Wi-Fi is enabled, but denial never blocks internet/LAN CODE.
+- P2P helper cleans stale cancel/group/service-request/local-service state before startup.
+- Host createGroup and DNS-SD service publication retry transient failures/BUSY.
+- Join DNS-SD discovery refreshes periodically and action failures are privacy-safely logged.
+- connect() failure clears expectedPort and restarts discovery.
+- P2P startup at 8 seconds is no longer gated by `connecting`.
+- A discovered P2P endpoint waits/retries if a transient LAN candidate still owns the connection slot.
+- Wi-Fi Direct logs exclude peer addresses/MACs/room data.
+
 
 
 ## v0.3.58 — Saved calibration profiles + encrypted diagnostic .txt attachments
@@ -799,20 +833,20 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: capture stable saved profiles and validate encrypted log transfer
+## Primary next checkpoint: human reliability retest of v0.3.59
 
-After v0.3.58 CI passes:
+After v0.3.59 CI passes:
 1. Update both phones through CHECK UPDATE.
-2. Confirm aspect choice list scrolls on the older phone.
-3. For each phone, tune VIDEO INLINE and press SAVE CURRENT.
-4. Enter fullscreen, tune separately, save VIDEO FULLSCREEN.
-5. If Baby mode needs different corrections, repeat for BABY INLINE and BABY FULLSCREEN.
-6. Use SHOW / COPY PROFILE for each saved profile and send the resulting text back in chat. These become the evidence for selecting production defaults.
-7. Open QuietLink chat on Phone A and tap SEND MY LOG. Phone B should receive a normal QuietLink-diagnostic-log.txt attachment with no visible transport/base64 text.
-8. Repeat Phone B -> Phone A so both session logs can be collected on one phone without Bluetooth.
-9. If a connection is especially bad, send the log before deliberately disconnecting; if transfer fails, no partial attachment should be shown.
-10. Complete the pending v0.3.56 internet test if not already done: Wi-Fi OFF/mobile data ON on one phone, other phone on another network, CODE must reach the online path without hotspot requirement.
-11. After profile evidence is received, decide whether to promote calibrated defaults or begin the cleaner canonical CameraX/EGL normalization experiment.
+2. Recreate a normal live connection and open chat on Phone A.
+3. Tap **SEND LOG + PROFILES**. Watch the small sender progress bar and verify neither phone/app/service crashes or reconnects.
+4. Phone B should show receive progress and then one normal **QuietLink-diagnostic-log.txt** attachment.
+5. Open it and confirm it contains a **Saved video calibration profiles** section. No separate profile message is required unless the user wants one.
+6. Repeat Phone B -> Phone A, especially from the older/poor-link phone.
+7. If anything crashes, reopen QuietLink and export/send the surviving diagnostic file; v0.3.59 now records a privacy-safe uncaught exception class + QuietLink site/line.
+8. Wi-Fi Direct test: Wi-Fi radio ON on both phones, not joined to the same router, no manually-created hotspot. Grant the optional Nearby Wi-Fi/legacy Location permission when prompted.
+9. For a clean P2P-only proof, make the internet path unavailable for the test. HOST/JOIN the same six-digit CODE and wait beyond the ~8-second fallback point. Expected status should progress through Wi-Fi Direct search/group/link and then normal QL5 connection.
+10. If Wi-Fi Direct still fails, SEND LOG + PROFILES after the attempt; new P2P diagnostic events expose privacy-safe state/failure reason/attempt data without MAC/IP/code.
+11. Once log transfer and P2P are stable, continue calibration profile collection and then decide whether to promote proven settings or begin canonical CameraX/EGL video normalization.
 
 ---
 
