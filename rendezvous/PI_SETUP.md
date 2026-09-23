@@ -74,9 +74,37 @@ You can also check:
 systemctl status quietlink-rendezvous --no-pager
 ```
 
-## 5. Next milestone-7 test
+## 5. Permanent production tunnel
 
-After the local health check passes, expose port 8787 through a temporary HTTPS tunnel. The Android test build will then use that HTTPS endpoint to verify two-phone candidate exchange.
+The permanent production deployment now uses a named Cloudflare Tunnel.
+
+Current public hostname:
+
+`https://rendezvousquietlinkvikman.dpdns.org`
+
+The Cloudflare published application route maps that hostname to:
+
+`http://127.0.0.1:8787`
+
+The Pi runs `cloudflared` as an enabled systemd service, so no router port-forward is required.
+
+Verify both services:
+
+```bash
+systemctl is-active quietlink-rendezvous
+systemctl is-active cloudflared
+```
+
+Both should report `active`.
+
+Then verify:
+
+```bash
+curl http://127.0.0.1:8787/health
+curl https://rendezvousquietlinkvikman.dpdns.org/health
+```
+
+Both should return QuietLink health JSON. Never commit/paste the Cloudflare tunnel token.
 
 Do not send SSH passwords, router passwords, tunnel credentials, private keys, or other secrets. Only the temporary public HTTPS test URL is needed.
 
