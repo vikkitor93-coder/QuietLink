@@ -339,3 +339,10 @@
 286. Wi-Fi Direct no-router checkpoint: enable Wi-Fi radio on both phones but do not join the same router and do not create a hotspot. With required P2P permission granted and internet path unavailable/disabled for the test, CODE should form a Wi-Fi Direct group and reach QL5 encrypted session establishment.
 287. Wi-Fi Direct privacy logs: diagnostic events may include state/reason/attempt counts only; do not log peer MAC/device address, group-owner IP, room code or derived room token.
 
+288. v0.3.60 Developer tools: verify **Export log + profiles (.txt)** opens Android's document picker and writes a readable privacy-safe text file.
+289. Developer tools: verify **Export profiles only (.txt)** writes a compact calibration report containing current display/reported/resolved rotations plus all saved profile slots.
+290. Chat: while connected, verify both **EXPORT LOG + PROFILES** and **EXPORT PROFILES** are available independently of SEND LOG + PROFILES.
+291. Export independence: local export must still work when the peer connection is poor or after peer transfer previously failed; it must not use the network transport.
+292. Profile evidence: save visibly different INLINE and FULLSCREEN offsets/aspects, export profiles, and verify the report preserves the exact values for later root-cause analysis.
+293. Privacy regression: neither export may contain IP/MAC addresses, room codes, peer/device names, fingerprints/keys, chat text, or media content.
+
