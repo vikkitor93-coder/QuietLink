@@ -246,3 +246,9 @@
 201. Privacy regression: exported logs may record formula labels, front/back, display/sensor/result quarter-turns, and lab toggle state, but must contain no frame contents, screenshots, camera images, public network endpoints, room tokens, or codes.
 202. Orientation selection report: record which preset/settings are correct for each phone/camera/posture before changing production defaults.
 
+203. v0.3.52 older-phone updater regression: from the older phone already manually updated to a v2-signed build, CHECK UPDATE must no longer fail merely because installed signingInfo is modern while archive signingInfo falls back to legacy GET_SIGNATURES.
+204. Legacy archive policy: approve only when installed current signer is the exact pinned v2 certificate, installed history contains both pinned old+v2 certificates, archive legacy signatures contains exactly the pinned original certificate, and package/version/checksum checks already passed.
+205. Legacy archive fail-closed cases: reject unknown archive legacy signer, missing old+v2 installed history, multiple current signers, installed legacy mode, wrong package, non-newer version, or checksum mismatch.
+206. Platform lineage guard: after the compatibility pre-check passes, Android's package installer must still enforce the authenticated old→v2 signing lineage and complete an in-place update without data loss.
+207. Older-phone forward-update check: after one manual in-place install of v0.3.52, use CHECK UPDATE on the next release to confirm this compatibility path works without another manual APK.
+
