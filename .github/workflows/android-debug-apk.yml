@@ -197,11 +197,11 @@ jobs:
               "service": "quietlink-online",
               "status": "ok",
               "onlineCallsAvailable": False,
-              "rendezvousUrl": "",
-              "phase": "rendezvous-bootstrap",
+              "rendezvousUrl": "https://rendezvousquietlinkvikman.dpdns.org",
+              "phase": "production-rendezvous",
               "message": (
-                  "QuietLink online service is reachable, but internet peer calling "
-                  "is not enabled yet. Local connections remain available."
+                  "QuietLink internet rendezvous is online. Local connections remain "
+                  "preferred while the normal cross-network call path is being validated."
               )
           }
           with open("update-site/online-status.json", "w", encoding="utf-8") as f:
