@@ -1,4 +1,4 @@
-# QuietLink 0.3.48
+# QuietLink 0.3.49
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,15 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.49 internet session checkpoint
+- v0.3.48 production rendezvous matching was user-confirmed across Wi-Fi ↔ mobile data with no developer override.
+- Production CODE sessions can now carry the existing QL5 handshake and encrypted control/chat byte stream through a bounded reliable rendezvous relay; the relay never receives session keys or plaintext control/chat.
+- Audio/video stay on the existing end-to-end encrypted UDP MediaTransport and use the exchanged STUN server-reflexive candidate.
+- Both phones send a tiny anonymous UDP NAT warm-up before encrypted media starts; it carries no identity, room code, media, or key material.
+- LAN/Hotspot remains immediate, production rendezvous keeps its ~1.5 s local head start, and Wi-Fi Direct still starts after 8 s.
+- Internet recovery and an opaque encrypted media-relay fallback remain pending.
+- The Online dot deliberately remains red until this path passes the real two-phone cross-network test.
 
 ## 0.3.48 production rendezvous integration
 - Promotes `https://rendezvousquietlinkvikman.dpdns.org` from a developer-only test endpoint into QuietLink's normal production rendezvous configuration.
