@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "complete",
-  "task": "GitHub to Discord task notifications",
-  "summary": "GitHub → Discord notifications are working.",
-  "updated_at": "2026-09-23T01:40:30Z",
+  "status": "working",
+  "task": "Productionize QuietLink internet rendezvous",
+  "summary": "Integrating the permanent rendezvous endpoint into normal CODE host/join while preserving local-first fallback and the developer override.",
+  "updated_at": "2026-09-23T02:25:00Z",
   "artifact": null
 }
