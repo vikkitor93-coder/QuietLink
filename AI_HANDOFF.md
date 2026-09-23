@@ -4,8 +4,8 @@ Updated: **2026-09-23**
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.54 / versionCode 66**  
-Latest release CI: **passed**
+Current release: **v0.3.55 / versionCode 67**  
+Latest release CI: **pending v0.3.55 validation**
 
 ---
 
@@ -162,6 +162,33 @@ Internet-path recovery still needs to become transport-independent.
 ---
 
 # 6. Online P2P work completed
+
+
+## v0.3.55 — Compact persistent rotation panel + local preview aspect
+
+Human findings from v0.3.54:
+- Full rotation list now renders on both phones.
+- User found rotation settings that make **portrait orientation upright on both phones**.
+- Iteration was too slow because every lab choice obscured the video and nested choices closed/reopened at the top.
+- Small local self-preview still visibly stretched/cropped the camera image.
+
+Implemented:
+- Active developer tools adds **ROTATE ONLY • compact live panel**.
+- Custom bottom Dialog keeps the live video visible above it and clears background dimming.
+- Quick controls: forced sender rotation, remote offset, remote direction, TX formula, local preview transform, rotation source, per-frame TX/RX, local mirror.
+- Every quick choice applies immediately, rebuilds within the same open dialog, and restores ScrollView Y position.
+- **FULL LAB** remains available for lower-frequency options like Force JPEG.
+- Local self-preview TextureView changed from crop to fit behavior.
+- Local preview frame aspect now follows effective local preview rotation rather than device Configuration orientation.
+- In-place fullscreen exit restores inline preview layout explicitly.
+- Fullscreen bitmap fallback local preview changed from CENTER_CROP to FIT_CENTER.
+
+Still pending:
+- Confirm v0.3.55 quick panel works as intended on both phones.
+- Confirm small self-preview no longer stretches.
+- Complete landscape-left and landscape-right rotation matrix, front and back camera.
+- Only after those results should a proven subset replace production defaults.
+
 
 
 ## v0.3.54 — Older-Android rotation-lab dialog compatibility
@@ -666,26 +693,26 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: verify v0.3.54 rotation-lab controls render, then continue orientation testing
+## Primary next checkpoint: validate v0.3.55 ROTATE ONLY panel and finish landscape orientation
 
-After v0.3.54 CI passes:
-1. On the older phone running v0.3.53, use **CHECK UPDATE** to install v0.3.54.
-2. Open 🛠 -> **Video rotation lab** during a Video/Baby call.
-3. Confirm the full selectable list appears; the previous message-only dialog is a failure.
-4. Try the four presets:
-   - Production baseline
-   - Android official + TextureView display-only
-   - WebRTC + per-frame metadata
-   - Android + per-frame metadata
-5. Test front camera portrait / landscape-left / landscape-right.
-6. Repeat back camera.
-7. Report which preset/settings keep both remote video and local preview upright.
-8. After a working combination is proven, promote only the smallest proven subset to production.
-9. Then resume the queued permanent-Pi/internet Voice checkpoint.
+After v0.3.55 CI passes:
+1. Update both phones through CHECK UPDATE.
+2. Start a same-LAN Video/Baby call.
+3. Open 🛠 -> **ROTATE ONLY • compact live panel**.
+4. Confirm the panel is anchored at the bottom and enough video stays visible above it.
+5. Tap several choices repeatedly; panel must remain open and at the same scroll position.
+6. Confirm the small local self-preview no longer stretches; letterboxing is acceptable.
+7. Keep the portrait combinations already found.
+8. Test landscape-left and landscape-right on the new phone, then old phone.
+9. Repeat front/back camera if results differ.
+10. Send back the exact quick-panel selections that make each phone correct in portrait + both landscape directions.
+11. Promote only the smallest common/proven subset to production defaults.
+12. Then resume the permanent-Pi/internet Voice checkpoint.
 
 Validated and no longer blocking:
-- Older-phone updater signature mismatch: **fixed and user-validated**.
-- Sleeping Baby old-phone audio regression: **working again / role-swap guard validated**.
+- Older-phone updater signing migration.
+- Sleeping Baby continuous audio.
+- Older-Android full rotation-lab list rendering.
 
 ---
 
