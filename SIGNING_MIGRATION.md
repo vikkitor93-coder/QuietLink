@@ -45,22 +45,20 @@ Never paste the new keystore, passwords, or base64 secret values into issues, co
 
 ## Current migration state
 
-Completed:
-- the four v2 signing values are stored as GitHub Actions Secrets and CI successfully reconstructed the keystore
-- CI verified the reconstructed v2 certificate against the pinned SHA-256 certificate digest
-- an Android old→v2 signing lineage was generated and a rotation candidate verified successfully for minSdk 28
-- v3-only future signing was verified using only the v2 secret key plus the public lineage record
-- the public lineage is stored at `signing/quietlink-v2-lineage.b64`
-- `app/quietlink-debug.jks` and plaintext signing passwords are removed from current `main`
-- all live feature branches were fast-forwarded to the cleaned current source
-- the normal Android CI workflow now builds unsigned and signs with the v2 Actions secret + public lineage only
+**COMPLETE for all repository-controlled remediation.**
 
 Completed:
-- the first stable rotated-signer release is v0.3.47 / versionCode 59
-- v0.3.47 is built by normal CI using only the v2 private key from GitHub Actions Secrets plus the public old→v2 lineage
+- both existing phones successfully updated in place to v0.3.47 / versionCode 59
+- v0.3.47 is signed by the new v2 private signer with the authenticated old→v2 Android signing lineage
+- normal CI signs only with the v2 key stored in GitHub Actions Secrets
+- the exposed old keystore and plaintext passwords are absent from every live branch
+- legacy QuietLink APK/source workflow artifacts were purged
+- all five live branches were force-rewritten to a sanitized clean root
+- the post-purge full reachable-history credential audit reported: `RESULT: no credential-pattern findings`
 
-Still required:
-- confirm v0.3.47 installs in place on both existing phones
-- rewrite reachable Git history and re-run the redacted history audit until it reports zero findings
+GitHub backend-retention note:
+- the old commits are no longer reachable from any live branch/tag history, but GitHub may continue serving an orphaned object by its exact SHA until backend garbage collection/support removal occurs
+- this does not restore trust to the old key; the old signer remains permanently compromised and must never be used again
+- both installed phones and all future CI releases have already moved to the new v2 signer, so possession of the old key cannot produce an accepted future QuietLink update through the approved lineage
 
 The signing lineage is public verification metadata. It does not contain a private signing key or password.
