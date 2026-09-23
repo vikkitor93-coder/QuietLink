@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "working",
-  "task": "Finish GitHub to Discord task notifications",
-  "summary": "Signing-key remediation is complete; validating the final Discord @everyone notification path.",
-  "updated_at": "2026-09-23T01:39:00Z",
+  "status": "complete",
+  "task": "GitHub to Discord task notifications",
+  "summary": "GitHub → Discord notifications are working.",
+  "updated_at": "2026-09-23T01:40:30Z",
   "artifact": null
 }
