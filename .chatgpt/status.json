@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "working",
+  "status": "partial",
   "task": "Validate first encrypted internet session",
-  "summary": "v0.3.48 production rendezvous matching passed. v0.3.49 adds an opaque reliable QL5 control relay with direct encrypted UDP media and is entering CI before the next two-phone test.",
-  "updated_at": "2026-09-23T03:20:00Z",
-  "artifact": "QuietLink v0.3.49"
+  "summary": "v0.3.49 built and published successfully. Android and rendezvous implementation is complete for this checkpoint; update the permanent Pi, install v0.3.49 on both phones, and validate Connected • Voice • Online with bidirectional audio/chat across Wi-Fi ↔ mobile data.",
+  "updated_at": "2026-09-23T03:34:00Z",
+  "artifact": "QuietLink v0.3.49 APK"
 }
