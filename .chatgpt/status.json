@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "partial",
-  "task": "Validate compact rotation panel and landscape orientation",
-  "summary": "v0.3.55 built, signed, tested, and published successfully. Human test now needed: update both phones, use ROTATE ONLY bottom panel, confirm it stays open/keeps scroll position, verify small self-preview no longer stretches, then finish landscape-left/right settings.",
-  "updated_at": "2026-09-23T05:02:00Z",
-  "artifact": "QuietLink v0.3.55 APK"
+  "status": "working",
+  "task": "Restore internet CODE and expand fullscreen video calibration",
+  "summary": "v0.3.56 removes the incorrect local-Wi-Fi prerequisite from CODE sessions, scopes Wi-Fi warnings to Nearby/Known, adds fullscreen ROTATE access and explicit transform refresh, and adds Local/Remote/Fullscreen aspect-ratio controls. CI is next.",
+  "updated_at": "2026-09-23T14:10:00Z",
+  "artifact": "QuietLink v0.3.56"
 }
