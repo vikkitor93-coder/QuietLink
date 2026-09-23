@@ -346,3 +346,14 @@
 292. Profile evidence: save visibly different INLINE and FULLSCREEN offsets/aspects, export profiles, and verify the report preserves the exact values for later root-cause analysis.
 293. Privacy regression: neither export may contain IP/MAC addresses, room codes, peer/device names, fingerprints/keys, chat text, or media content.
 
+294. v0.3.61 updater continuity: update both phones from v0.3.60 through CHECK UPDATE; saved video calibration profiles must remain present.
+295. Portrait lock: rotate each phone physically to landscape-left and landscape-right during lobby, Voice, Video, Baby, fullscreen Video, and chat. QuietLink activity/video presentation must remain portrait and must not rebuild into a landscape UI.
+296. Portrait profile preservation: open VIDEO INLINE and FULLSCREEN after update and verify the previously saved per-device profile still loads and portrait orientation remains correct.
+297. Chat attachment download: receive QuietLink-diagnostic-log.txt, tap it, then tap DOWNLOAD. Android's document picker must open and save a readable .txt outside QuietLink's cache.
+298. Chat download isolation: DOWNLOAD must copy the already-received cached attachment locally; it must not trigger another peer transfer or require the peer to remain connected.
+299. P2P state gating Android 10+: with Wi-Fi radio on, start a no-router CODE test. If requestP2pState initially reports disabled, QuietLink must show a waiting/startup status and must not immediately spam createGroup/discoverServices BUSY failures.
+300. P2P delayed-enable regression: if Android reports disabled then enabled several seconds later, pending host group creation or join discovery must start immediately after enabled without restarting the QuietLink session.
+301. P2P radio-off status: with Wi-Fi radio actually off, status must clearly say Wi-Fi Direct is waiting for the Wi-Fi radio rather than claiming an unsupported/permission failure; LAN/internet CODE remain eligible.
+302. P2P privacy: wifi_direct_state may log enabled, wifi_radio and source=query|broadcast only; no MAC, peer name, address, room code or key material.
+303. Orientation evidence checkpoint: keep the uploaded old/new phone profile offsets documented; do not replace them with guessed defaults until the canonical camera transform architecture is addressed.
+

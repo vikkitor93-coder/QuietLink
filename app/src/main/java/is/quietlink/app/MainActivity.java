@@ -28,6 +28,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     private static final int TAB_CODE = 2;
     private static final int REQ_EXPORT_LOG = 91;
     private static final int REQ_EXPORT_PROFILES = 92;
+    private static final int REQ_SAVE_CHAT_FILE = 93;
 
     private LinearLayout root;
     private LinearLayout joinContent;
@@ -100,6 +101,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     private ScrollView chatScroll;
     private ProgressBar chatTransferProgress;
     private TextView chatTransferStatus;
+    private String pendingChatDownloadPath;
+    private String pendingChatDownloadName;
     private boolean wifiWarningDismissedThisForeground = false;
     private boolean restoringPersistedSession = false;
     private String lastDisconnectBanner = null;
@@ -1837,7 +1840,53 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if ((requestCode != REQ_EXPORT_LOG && requestCode != REQ_EXPORT_PROFILES)
+
+        if (requestCode == REQ_SAVE_CHAT_FILE) {
+            String sourcePath = pendingChatDownloadPath;
+            String fileName = pendingChatDownloadName;
+            pendingChatDownloadPath = null;
+            pendingChatDownloadName = null;
+
+            if (resultCode != RESULT_OK
+                    || data == null || data.getData() == null
+                    || sourcePath == null) return;
+
+            try {
+                java.io.File source = new java.io.File(sourcePath);
+                if (!source.exists() || !source.isFile()
+                        || source.length() > 1024L * 1024L) {
+                    throw new java.io.IOException("Attachment unavailable");
+                }
+
+                try (java.io.FileInputStream in =
+                             new java.io.FileInputStream(source);
+                     java.io.OutputStream out =
+                             getContentResolver().openOutputStream(
+                                     data.getData(), "wt")) {
+                    if (out == null) {
+                        throw new java.io.IOException("No output stream");
+                    }
+                    byte[] buffer = new byte[8192];
+                    int n;
+                    while ((n = in.read(buffer)) >= 0) {
+                        if (n > 0) out.write(buffer, 0, n);
+                    }
+                    out.flush();
+                }
+
+                Toast.makeText(this,
+                        "Downloaded " + (fileName == null
+                                ? "text file" : fileName),
+                        Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                Toast.makeText(this, "Could not download text file",
+                        Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
+
+        if ((requestCode != REQ_EXPORT_LOG
+                && requestCode != REQ_EXPORT_PROFILES)
                 || resultCode != RESULT_OK
                 || data == null || data.getData() == null) return;
         try (java.io.OutputStream out =
@@ -3842,8 +3891,41 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         new android.app.AlertDialog.Builder(this)
                 .setTitle(message.fileName)
                 .setView(scroll)
+                .setPositiveButton("DOWNLOAD", (dialog, which) ->
+                        downloadChatTextFile(message))
                 .setNegativeButton("Close", null)
                 .show();
+    }
+
+    private void downloadChatTextFile(SessionBus.ChatMessage message) {
+        if (message == null || !message.isFile()) return;
+
+        java.io.File source = new java.io.File(message.filePath);
+        if (!source.exists() || !source.isFile()
+                || source.length() > 1024L * 1024L) {
+            Toast.makeText(this, "This text file is no longer available",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        pendingChatDownloadPath = source.getAbsolutePath();
+        pendingChatDownloadName =
+                (message.fileName == null || message.fileName.trim().isEmpty())
+                        ? "QuietLink-chat-file.txt"
+                        : message.fileName.trim();
+
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TITLE, pendingChatDownloadName);
+        try {
+            startActivityForResult(intent, REQ_SAVE_CHAT_FILE);
+        } catch (Exception e) {
+            pendingChatDownloadPath = null;
+            pendingChatDownloadName = null;
+            Toast.makeText(this, "Could not open file downloader",
+                    Toast.LENGTH_LONG).show();
+        }
     }
 
     private void updateChatButtonBadge() {

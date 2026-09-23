@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "partial",
-  "task": "Collect exact video transform evidence from both phones",
-  "summary": "v0.3.60 built, signed, tested, and published successfully. Human test: save working inline/fullscreen profiles, export profiles or log+profiles locally from chat/Developer tools, then send the .txt files back for root-cause rotation/aspect analysis.",
-  "updated_at": "2026-09-23T18:20:00Z",
-  "artifact": "QuietLink v0.3.60 APK"
+  "status": "working",
+  "task": "Lock portrait, add chat download, and wait for Android P2P readiness",
+  "summary": "v0.3.61 preserves the user-calibrated portrait profiles, locks MainActivity to portrait, adds DOWNLOAD to received chat text files, and gates Wi-Fi Direct operations on Android's actual P2P-enabled state instead of hammering BUSY while disabled. CI is next.",
+  "updated_at": "2026-09-23T20:16:00Z",
+  "artifact": "QuietLink v0.3.61"
 }

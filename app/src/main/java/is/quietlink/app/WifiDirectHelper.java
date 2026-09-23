@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.*;
 import android.content.pm.PackageManager;
 import android.net.NetworkInfo;
+import android.net.wifi.WifiManager;
 import android.net.wifi.p2p.*;
 import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceInfo;
 import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceRequest;
@@ -42,6 +43,10 @@ public final class WifiDirectHelper implements AutoCloseable {
     private boolean closed;
     private boolean active;
     private boolean connectedCallbackDelivered;
+    private boolean p2pStateKnown;
+    private boolean p2pEnabled;
+    private boolean p2pStartReleased;
+    private Runnable pendingP2pStart;
     private int generation;
 
     private String joinCode;
@@ -79,10 +84,11 @@ public final class WifiDirectHelper implements AutoCloseable {
         hostPort = port;
         registerReceiver();
 
-        SessionBus.status("No LAN peer yet • enabling Wi-Fi Direct fallback…");
+        SessionBus.status("No LAN peer yet • preparing Wi-Fi Direct fallback…");
         QuietLog.log("P2P", "wifi_direct_host_start", "permission=1");
 
-        cleanupStaleState(g, () -> createHostGroup(g, 0));
+        waitForP2pEnabled(g,
+                () -> cleanupStaleState(g, () -> createHostGroup(g, 0)));
     }
 
     public void discoverAndConnect(String code, Connected connected) {
@@ -98,10 +104,11 @@ public final class WifiDirectHelper implements AutoCloseable {
         connectedCallbackDelivered = false;
         registerReceiver();
 
-        SessionBus.status("Trying Wi-Fi Direct fallback…");
+        SessionBus.status("Preparing Wi-Fi Direct fallback…");
         QuietLog.log("P2P", "wifi_direct_join_start", "permission=1");
 
-        cleanupStaleState(g, () -> beginJoinDiscovery(g));
+        waitForP2pEnabled(g,
+                () -> cleanupStaleState(g, () -> beginJoinDiscovery(g)));
     }
 
     private boolean usable() {
@@ -116,6 +123,126 @@ public final class WifiDirectHelper implements AutoCloseable {
             return false;
         }
         return true;
+    }
+
+    private void waitForP2pEnabled(int g, Runnable start) {
+        if (!valid(g)) return;
+        pendingP2pStart = start;
+        p2pStartReleased = false;
+        p2pStateKnown = false;
+        p2pEnabled = false;
+
+        if (Build.VERSION.SDK_INT >= 29) {
+            queryP2pState(g, 0);
+        } else {
+            // Older Android exposes P2P state only through broadcasts. Give
+            // the freshly-registered receiver a moment to deliver the current
+            // state before starting a group/discovery operation.
+            schedule(g, () -> {
+                if (!valid(g) || p2pStartReleased) return;
+                if (p2pStateKnown && !p2pEnabled) {
+                    waitForLegacyP2pState(g, 0);
+                } else if (!wifiRadioEnabled()) {
+                    p2pStateKnown = true;
+                    p2pEnabled = false;
+                    waitForLegacyP2pState(g, 0);
+                } else {
+                    releaseP2pStart(g, "legacy_no_disabled_state");
+                }
+            }, 450L);
+        }
+    }
+
+    private void queryP2pState(int g, int attempt) {
+        if (!valid(g) || p2pStartReleased || Build.VERSION.SDK_INT < 29) return;
+        try {
+            manager.requestP2pState(channel, state -> {
+                if (!valid(g) || p2pStartReleased) return;
+                boolean enabled =
+                        state == WifiP2pManager.WIFI_P2P_STATE_ENABLED;
+                p2pStateKnown = true;
+                p2pEnabled = enabled;
+                logP2pState(enabled, "query");
+
+                if (enabled) {
+                    releaseP2pStart(g, "query_enabled");
+                    return;
+                }
+
+                showWaitingForP2p(attempt);
+                schedule(g, () -> queryP2pState(g, attempt + 1), 1000L);
+            });
+        } catch (Exception e) {
+            QuietLog.log("P2P", "wifi_direct_state_query_failed",
+                    "reason=" + e.getClass().getSimpleName());
+            if (wifiRadioEnabled()) {
+                // Query itself failing should not permanently disable P2P.
+                // Fall back to the operation path and let ActionListener
+                // report a concrete BUSY/ERROR/UNSUPPORTED reason.
+                releaseP2pStart(g, "query_exception");
+            } else {
+                showWaitingForP2p(attempt);
+                schedule(g, () -> queryP2pState(g, attempt + 1), 1000L);
+            }
+        }
+    }
+
+    private void waitForLegacyP2pState(int g, int attempt) {
+        if (!valid(g) || p2pStartReleased) return;
+
+        if (p2pEnabled) {
+            releaseP2pStart(g, "broadcast_enabled");
+            return;
+        }
+
+        showWaitingForP2p(attempt);
+        schedule(g, () -> {
+            if (!valid(g) || p2pStartReleased) return;
+            if (p2pEnabled) releaseP2pStart(g, "broadcast_enabled");
+            else waitForLegacyP2pState(g, attempt + 1);
+        }, 1000L);
+    }
+
+    private void releaseP2pStart(int g, String source) {
+        if (!valid(g) || p2pStartReleased) return;
+        p2pStartReleased = true;
+        Runnable start = pendingP2pStart;
+        pendingP2pStart = null;
+        QuietLog.log("P2P", "wifi_direct_start_released",
+                "source=" + source);
+        if (start != null) start.run();
+    }
+
+    private void showWaitingForP2p(int attempt) {
+        boolean wifiOn = wifiRadioEnabled();
+        if (!wifiOn) {
+            SessionBus.status("Wi-Fi Direct waiting • turn Wi-Fi radio on");
+        } else {
+            SessionBus.status("Wi-Fi Direct • waiting for Android P2P to become ready…");
+        }
+        if (attempt == 0 || attempt % 10 == 0) {
+            QuietLog.log("P2P", "wifi_direct_waiting",
+                    "wifi_radio=" + (wifiOn ? 1 : 0)
+                            + " attempt=" + attempt);
+        }
+    }
+
+    private boolean wifiRadioEnabled() {
+        try {
+            WifiManager wifi = (WifiManager)
+                    context.getApplicationContext()
+                            .getSystemService(Context.WIFI_SERVICE);
+            return wifi != null && wifi.isWifiEnabled();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void logP2pState(boolean enabled, String source) {
+        QuietLog.log("P2P", "wifi_direct_state",
+                "enabled=" + (enabled ? 1 : 0)
+                        + " wifi_radio=" + (wifiRadioEnabled() ? 1 : 0)
+                        + " source=" + source);
     }
 
     private void cleanupStaleState(int g, Runnable next) {
@@ -420,13 +547,20 @@ public final class WifiDirectHelper implements AutoCloseable {
                             WifiP2pManager.WIFI_P2P_STATE_DISABLED);
                     boolean enabled =
                             state == WifiP2pManager.WIFI_P2P_STATE_ENABLED;
-                    QuietLog.log("P2P", "wifi_direct_state",
-                            "enabled=" + (enabled ? 1 : 0));
-                    if (!enabled && active) {
-                        SessionBus.status("Wi-Fi Direct unavailable • Wi-Fi/P2P is off");
-                    } else if (enabled && active && joiner) {
-                        int g = generation;
-                        schedule(g, () -> restartJoinDiscovery(g, 0), 500L);
+                    p2pStateKnown = true;
+                    p2pEnabled = enabled;
+                    logP2pState(enabled, "broadcast");
+
+                    if (!active) return;
+                    int g = generation;
+                    if (enabled) {
+                        if (!p2pStartReleased) {
+                            releaseP2pStart(g, "broadcast_enabled");
+                        } else if (joiner) {
+                            schedule(g, () -> restartJoinDiscovery(g, 0), 500L);
+                        }
+                    } else if (!p2pStartReleased) {
+                        showWaitingForP2p(0);
                     }
                     return;
                 }
@@ -498,6 +632,10 @@ public final class WifiDirectHelper implements AutoCloseable {
     public void stopDiscoveryKeepConnection() {
         active = false;
         generation++;
+        p2pStartReleased = false;
+        pendingP2pStart = null;
+        p2pStateKnown = false;
+        p2pEnabled = false;
         main.removeCallbacksAndMessages(null);
 
         if (manager != null && channel != null) {

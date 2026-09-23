@@ -1,7 +1,7 @@
 # QuietLink milestones
 
 Updated: 2026-09-23  
-Current release: **v0.3.60**  
+Current release: **v0.3.61**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -67,6 +67,11 @@ Source of truth: **GitHub main**
    - ✅ v0.3.59 Wi-Fi Direct permission/startup/retry regression repair
    - ✅ v0.3.60 local export of log + profiles from chat and Developer tools
    - ✅ v0.3.60 profile-only transform/offset report
+   - ✅ User supplied calibrated profiles from both phones
+   - ✅ v0.3.61 temporary portrait-only activity lock
+   - ✅ v0.3.61 DOWNLOAD action for received chat .txt attachments
+   - ✅ v0.3.61 Wi-Fi Direct P2P readiness gate (wait for enabled instead of BUSY hammering)
+   - ⏳ Human: verify portrait stays fixed and delayed-enable Wi-Fi Direct reaches group/discovery
    - ⏳ Human: export working phone profiles and send them back for underlying rotation analysis
    - ⏳ Human: re-test log transfer on both phones and no-router Wi-Fi Direct CODE
    - ⏳ Human: save/report working profiles per phone/mode and validate log transfer
