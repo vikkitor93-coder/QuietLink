@@ -962,6 +962,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         box.addView(header, lp(-1,dp(36),0,0,0,3));
 
         addWindowSelector(box, dialog);
+        addVideoProfileControls(box, dialog);
 
         if (quickRotationWindow == 1) {
             TextView current = text(
@@ -1167,31 +1168,116 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         line.addView(text(label, 8, muted(), true),
                 new LinearLayout.LayoutParams(0,-2,1f));
 
-        Spinner spinner = new Spinner(this);
-        String[] labels = quickAspectLabels();
-        int[] modes = quickAspectModes();
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(
-                this, android.R.layout.simple_spinner_item, labels);
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinner.setAdapter(adapter);
-        spinner.setSelection(quickAspectChoiceIndex(selectedMode), false);
-        final boolean[] armed = {false};
-        spinner.post(() -> armed[0] = true);
-        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(
-                    AdapterView<?> parent, View view, int position, long id) {
-                if (!armed[0]) return;
-                int safe = Math.max(0, Math.min(modes.length - 1, position));
-                int mode = modes[safe];
-                if (mode == selectedMode) return;
-                try { choice.apply(mode); } catch (Exception ignored) {}
+        Button selector = secondary(
+                RotationLabConfig.aspectLabel(selectedMode) + "  ▼");
+        selector.setTextSize(10);
+        selector.setOnClickListener(v -> {
+            String[] labels = quickAspectLabels();
+            int[] modes = quickAspectModes();
+
+            // AlertDialog uses a ListView internally, so unlike the old Spinner
+            // this remains vertically scrollable even on small/older phones.
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle(label)
+                    .setSingleChoiceItems(
+                            labels,
+                            quickAspectChoiceIndex(selectedMode),
+                            (pick, which) -> {
+                                int safe = Math.max(0,
+                                        Math.min(modes.length - 1, which));
+                                int mode = modes[safe];
+                                try { choice.apply(mode); } catch (Exception ignored) {}
+                                pick.dismiss();
+                                applyRotationLabNow();
+                                refreshQuickRotationPanelAtSameScroll(box, dialog);
+                            })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        });
+        line.addView(selector,
+                new LinearLayout.LayoutParams(dp(150),dp(38)));
+        box.addView(line, lp(-1,dp(42),0,2,0,2));
+    }
+
+    private void addVideoProfileControls(LinearLayout box,
+                                         android.app.Dialog dialog) {
+        if (activeMode != SessionService.MODE_VIDEO
+                && activeMode != SessionService.MODE_BABY) return;
+
+        boolean full = isFullscreenVideoRendering();
+        boolean saved = RotationLabConfig.hasProfile(this, activeMode, full);
+        String name = RotationLabConfig.profileLabel(activeMode, full);
+
+        LinearLayout titleRow = row();
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.addView(text("PROFILE • " + name
+                        + (saved ? " • SAVED" : " • NOT SAVED"),
+                        8, saved ? Color.LTGRAY : muted(), true),
+                new LinearLayout.LayoutParams(0,-2,1f));
+        box.addView(titleRow, lp(-1,-2,0,2,0,1));
+
+        LinearLayout actions = row();
+        Button save = primary("SAVE CURRENT");
+        save.setTextSize(8);
+        save.setOnClickListener(v -> {
+            RotationLabConfig.saveProfile(this, activeMode, full);
+            QuietLog.log("UI", "video_profile_save",
+                    "mode=" + activeMode + " fullscreen=" + (full ? 1 : 0));
+            Toast.makeText(this, "Saved " + name + " profile",
+                    Toast.LENGTH_SHORT).show();
+            refreshQuickRotationPanelAtSameScroll(box, dialog);
+        });
+        actions.addView(save, new LinearLayout.LayoutParams(0,dp(34),1f));
+
+        Button load = secondary("LOAD");
+        load.setTextSize(8);
+        load.setEnabled(saved);
+        load.setAlpha(saved ? 1f : 0.45f);
+        load.setOnClickListener(v -> {
+            if (RotationLabConfig.applyProfile(this, activeMode, full)) {
                 applyRotationLabNow();
+                QuietLog.log("UI", "video_profile_apply",
+                        "mode=" + activeMode + " fullscreen=" + (full ? 1 : 0)
+                                + " source=manual");
                 refreshQuickRotationPanelAtSameScroll(box, dialog);
             }
-            @Override public void onNothingSelected(AdapterView<?> parent) {}
         });
-        line.addView(spinner, new LinearLayout.LayoutParams(dp(150),dp(42)));
-        box.addView(line, lp(-1,dp(42),0,2,0,2));
+        LinearLayout.LayoutParams loadLp = new LinearLayout.LayoutParams(0,dp(34),0.62f);
+        loadLp.setMargins(dp(4),0,0,0);
+        actions.addView(load, loadLp);
+
+        Button clear = secondary("CLEAR");
+        clear.setTextSize(8);
+        clear.setEnabled(saved);
+        clear.setAlpha(saved ? 1f : 0.45f);
+        clear.setOnClickListener(v -> {
+            RotationLabConfig.clearProfile(this, activeMode, full);
+            QuietLog.log("UI", "video_profile_clear",
+                    "mode=" + activeMode + " fullscreen=" + (full ? 1 : 0));
+            refreshQuickRotationPanelAtSameScroll(box, dialog);
+        });
+        LinearLayout.LayoutParams clearLp = new LinearLayout.LayoutParams(0,dp(34),0.62f);
+        clearLp.setMargins(dp(4),0,0,0);
+        actions.addView(clear, clearLp);
+
+        box.addView(actions, lp(-1,dp(34),0,0,0,3));
+        TextView note = text(saved
+                        ? "This profile auto-loads when this presentation mode opens."
+                        : "Save once; QuietLink will auto-load it whenever this mode opens.",
+                8, muted(), false);
+        box.addView(note, lp(-1,-2,0,0,0,3));
+    }
+
+    private void applySavedVideoProfile(boolean fullscreen) {
+        if (activeMode != SessionService.MODE_VIDEO
+                && activeMode != SessionService.MODE_BABY) return;
+        if (!RotationLabConfig.applyProfile(this, activeMode, fullscreen)) return;
+
+        QuietLog.log("UI", "video_profile_apply",
+                "mode=" + activeMode
+                        + " fullscreen=" + (fullscreen ? 1 : 0)
+                        + " source=auto");
+        applyRotationLabNow();
     }
 
     private Button rotationQuickToggle(String label,
@@ -2836,6 +2922,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 setFullscreenVideoControlsVisible(!videoControlsVisible));
         videoControlsVisible = true;
         setFullscreenVideoControlsVisible(true);
+        applySavedVideoProfile(true);
         updateLocalPreviewLayout();
         videoFrame.post(this::refreshVideoTransformsForCurrentLayout);
     }
@@ -2879,6 +2966,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         fullscreenVideoRoot = null;
         videoControlsVisible = true;
         setFullscreenVideoControlsVisible(true);
+        applySavedVideoProfile(false);
         updateLocalPreviewLayout();
         if (videoFrame != null) videoFrame.post(this::refreshVideoTransformsForCurrentLayout);
         QuietLog.log("UI", "video_fullscreen_restored", "surfaces_preserved=1");
@@ -3768,6 +3856,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         localVideoTexture = null;
         installFullscreenRotateButton(frame);
         setContentView(frame);
+        applySavedVideoProfile(true);
         frame.post(this::refreshVideoTransformsForCurrentLayout);
     }
 
@@ -4230,6 +4319,10 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             boolean needsRestoreScreen = restoringPersistedSession && !renderedSession;
             if (needsRestoreScreen) restoringPersistedSession = false;
             activeMode = newMode; activeHost = isHost;
+            if (changed && (newMode == SessionService.MODE_VIDEO
+                    || newMode == SessionService.MODE_BABY)) {
+                applySavedVideoProfile(false);
+            }
             if (newMode != SessionService.MODE_VIDEO
                     && newMode != SessionService.MODE_BABY) {
                 videoFullscreenActive = false;
@@ -4375,7 +4468,10 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             if (!activeBabyStation && activeMode == SessionService.MODE_BABY && babySettingsKnown) {
                 remoteVideoOn = babyCameraOn;
             }
-            if (!renderedSession && SessionBus.active) showSession(SessionBus.code, SessionBus.host);
+            if (!renderedSession && SessionBus.active) {
+                applySavedVideoProfile(false);
+                showSession(SessionBus.code, SessionBus.host);
+            }
         });
     }
 
