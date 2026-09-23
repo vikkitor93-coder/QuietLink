@@ -783,9 +783,23 @@ public final class SessionService extends Service {
 
         String testUrl = OnlineTestConfig.get(this);
         if (testUrl != null && !testUrl.isEmpty()) {
-            QuietLog.log("ONLINE", "test_rendezvous_override", "enabled=1");
-            startOnlineRendezvousAt(testUrl, true);
-            return;
+            String normalizedTest = testUrl;
+            while (normalizedTest.endsWith("/")) {
+                normalizedTest = normalizedTest.substring(0, normalizedTest.length() - 1);
+            }
+
+            if (OnlineStatus.PRODUCTION_RENDEZVOUS_URL.equals(normalizedTest)) {
+                // This URL was previously entered manually during milestone-7
+                // testing. It is now the official production endpoint, so
+                // remove the redundant local override automatically.
+                try { OnlineTestConfig.set(this, ""); } catch (Exception ignored) {}
+                QuietLog.log("ONLINE", "test_rendezvous_override",
+                        "enabled=0 reason=promoted_to_production");
+            } else {
+                QuietLog.log("ONLINE", "test_rendezvous_override", "enabled=1");
+                startOnlineRendezvousAt(testUrl, true);
+                return;
+            }
         }
 
         OnlineStatus.check(result -> {
@@ -833,6 +847,9 @@ public final class SessionService extends Service {
                                         SessionBus.status(count > 0
                                                 ? "Online test • peer matched • candidate received"
                                                 : "Online test • peer matched • no candidate received");
+                                    } else if (count > 0) {
+                                        SessionBus.status(
+                                                "Internet peer found • checking connection paths…");
                                     }
                                 }
                             }
