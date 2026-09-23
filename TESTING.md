@@ -252,3 +252,11 @@
 206. Platform lineage guard: after the compatibility pre-check passes, Android's package installer must still enforce the authenticated old→v2 signing lineage and complete an in-place update without data loss.
 207. Older-phone forward-update check: after one manual in-place install of v0.3.52, use CHECK UPDATE on the next release to confirm this compatibility path works without another manual APK.
 
+208. v0.3.53 updater continuity: with the older phone on v0.3.52, use **CHECK UPDATE** to install v0.3.53. This is the first forward-update validation of the documented legacy archive oldest-signer compatibility path; do not manually install first unless CHECK UPDATE fails.
+209. Baby Station continuous audio regression: connect Sleeping Baby with the older phone as Baby Station, enable Baby microphone, and verify recorder/capture TX remains active for at least 10 minutes unless the user explicitly disables the mic or changes roles.
+210. Role-swap guard: tapping **SWAP** once must open a confirmation and must not change roles until the user presses the dialog's SWAP action.
+211. Cancelled role swap: tap SWAP then Cancel; Baby Station must remain Baby Station and continuous audio TX must remain active.
+212. Confirmed Baby→Parent swap: confirm the dialog; logs must record `baby_role_swap_request source=local from=baby to=parent` followed by `baby_role_changed`, and continuous Baby microphone capture may then close by design.
+213. Peer role-swap logging: when the other phone confirms a role swap, the receiving phone must record `source=peer` before its resulting role transition.
+214. Privacy regression: role logs may contain only source/local role names and tell-peer state; they must contain no device IDs, peer names, addresses, codes, media, or keys.
+

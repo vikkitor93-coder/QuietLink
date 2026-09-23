@@ -340,7 +340,12 @@ public final class SessionService extends Service {
         } else if (ACTION_REFRESH_VIDEO_PIPELINE.equals(action)) {
             if (video != null) video.refreshAfterDisplayWake();
         } else if (ACTION_SWAP_BABY_ROLE.equals(action)) {
-            if (mode == MODE_BABY) setBabyStation(!babyStation, true);
+            if (mode == MODE_BABY) {
+                QuietLog.log("SERVICE", "baby_role_swap_request",
+                        "source=local from=" + (babyStation ? "baby" : "parent")
+                                + " to=" + (babyStation ? "parent" : "baby"));
+                setBabyStation(!babyStation, true);
+            }
         }
         return (established.get() || recovering || SessionBus.active)
                 ? START_STICKY : START_NOT_STICKY;
@@ -1424,7 +1429,11 @@ public final class SessionService extends Service {
                 } else if (c.startsWith("BABY_ROLE:")) {
                     if (mode == MODE_BABY) {
                         boolean peerIsBaby = "1".equals(c.substring("BABY_ROLE:".length()));
-                        setBabyStation(!peerIsBaby, false);
+                        boolean nextLocalBaby = !peerIsBaby;
+                        QuietLog.log("SERVICE", "baby_role_swap_request",
+                                "source=peer from=" + (babyStation ? "baby" : "parent")
+                                        + " to=" + (nextLocalBaby ? "baby" : "parent"));
+                        setBabyStation(nextLocalBaby, false);
                     }
                 } else if ("SLEEPING_ON".equals(c)) {
                     setSleepingBaby(true, false);
@@ -2290,8 +2299,13 @@ public final class SessionService extends Service {
             loudMs = 0;
         }
 
+        boolean oldBabyStation = babyStation;
         babyStation = makeBabyStation;
         SessionBus.babyRoleChanged(babyStation);
+        QuietLog.log("SERVICE", "baby_role_changed",
+                "from=" + (oldBabyStation ? "baby" : "parent")
+                        + " to=" + (babyStation ? "baby" : "parent")
+                        + " tell_peer=" + (tellPeer ? 1 : 0));
         if (babyStation) setMicMuted(false);
 
         listening = true;

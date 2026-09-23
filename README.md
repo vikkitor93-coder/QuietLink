@@ -1,4 +1,4 @@
-# QuietLink 0.3.52
+# QuietLink 0.3.53
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,13 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.53 Baby Station role-swap regression guard
+- A real Sleeping Baby diagnostic trace showed the older phone's microphone recorder and encrypted audio TX were healthy, then the phone changed from **Baby Station** to **Parent Station**. Parent Station intentionally closes continuous microphone capture, which looked like an audio-transmit regression.
+- The visible **SWAP** role button no longer changes Baby/Parent roles on a single tap. It now requires an explicit confirmation explaining the resulting microphone/camera behavior.
+- Service logs now record privacy-safe `baby_role_swap_request` source (`local` or `peer`) and the resulting `baby_role_changed` transition. No device identity, media, room code, or peer address is logged.
+- Actual Baby Station microphone gating/audio transport is unchanged because the captured trace showed it working correctly before the role transition.
+- v0.3.52 updater compatibility and v0.3.51 Video rotation lab remain unchanged.
 
 ## 0.3.52 older-Android archive signer compatibility
 - Fixes the remaining updater false-positive on the older phone: installed QuietLink exposes modern signing history correctly, but the downloaded rotated APK is parsed through the deprecated legacy `PackageInfo.signatures` path.
