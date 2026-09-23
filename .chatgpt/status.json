@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "working",
-  "task": "Fix older-Android rotation lab menu rendering",
-  "summary": "Updater continuity and Sleeping Baby audio are now user-validated. v0.3.54 fixes the older phone's rotation lab showing only the summary by making the dialog list-first; CI is next.",
-  "updated_at": "2026-09-23T06:36:00Z",
-  "artifact": "QuietLink v0.3.54"
+  "status": "partial",
+  "task": "Validate rotation lab controls on older phone",
+  "summary": "v0.3.54 built, signed, tested, and published successfully. Updater continuity and Sleeping Baby audio are already user-validated. Human test now needed: CHECK UPDATE to v0.3.54 on old phone, open Video rotation lab, confirm the full selectable list renders, then continue the orientation preset matrix.",
+  "updated_at": "2026-09-23T06:40:00Z",
+  "artifact": "QuietLink v0.3.54 APK"
 }
