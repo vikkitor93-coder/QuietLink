@@ -1,4 +1,4 @@
-# QuietLink 0.3.58
+# QuietLink 0.3.59
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,36 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.59 diagnostic-transfer stability + Wi-Fi Direct repair
+- Fixes a v0.3.58 regression where sending the diagnostic attachment could destabilize both sides of a call.
+- Two risky behaviors were removed from the transfer path:
+  - the full raw log was sent as a long burst of individually flushed encrypted chat frames,
+  - any transfer write failure immediately forced the whole QuietLink session into connection-loss recovery.
+- New diagnostic transfer path:
+  - builds the same privacy-safe UTF-8 `.txt`,
+  - embeds all four saved video calibration profile summaries in that file,
+  - gzip-compresses the text before transport,
+  - sends bounded 4 KiB encrypted chunks over the existing QL5 chat channel,
+  - yields periodically so heartbeat/control work is not starved,
+  - shows a small **Sending / Receiving diagnostic log • N%** progress bar in chat,
+  - validates declared compressed size, decompression bounds, final raw size and SHA-256 before exposing the attachment,
+  - a failed optional file transfer reports failure but no longer forces the call itself into recovery.
+- v0.3.59 can still receive the older v0.3.58 plain FILE_BEGIN/CHUNK/END transfer format, but v0.3.59 senders use the safer FILE2/GZIP framing.
+- `SEND LOG + PROFILES` means the copied calibration profile text no longer needs to be sent separately unless the user wants to.
+- QuietLog now installs a privacy-safe uncaught-crash fingerprint recorder. It records only exception class plus the first QuietLink code site/line; Throwable messages are deliberately not stored.
+- Wi-Fi Direct CODE fallback repair:
+  - CODE remains internet-capable and **does not require** nearby/location permission to start.
+  - If Wi-Fi is on, QuietLink now asks for the Android Wi-Fi Direct runtime permission as an **optional** transport permission; denying it still allows LAN/internet CODE.
+  - The previous internet regression fix had removed nearby permission from CODE's required-permission list, but the old startup-wide permission request was no longer actually called. That left Wi-Fi Direct silently unavailable on devices where the permission was not already granted.
+  - P2P startup now removes stale groups/requests/services before a new attempt.
+  - Host group creation and service publication retry BUSY/error conditions.
+  - Join service discovery is periodically refreshed and failures are logged with privacy-safe reason labels.
+  - A failed `WifiP2pManager.connect()` resets the attempt instead of leaving `expectedPort` permanently locked.
+  - The one-shot 8-second Wi-Fi Direct fallback no longer gets skipped forever merely because a transient LAN connection attempt has `connecting=true` at that exact instant.
+  - Once a P2P route is found while a LAN attempt is still occupying the socket slot, QuietLink retains/retries that direct endpoint rather than throwing it away.
+- Wi-Fi Direct still requires the Wi-Fi/P2P radio to be enabled and Android's applicable Nearby Wi-Fi / legacy Location permission. It does **not** require an existing router connection or a manually-created hotspot.
+- QL5 authentication/encryption, rendezvous privacy, package ID and signing continuity are unchanged.
 
 ## 0.3.58 calibration profiles + encrypted diagnostic-log attachments
 - Aspect selection in **VIDEO TUNE** no longer relies on a Spinner dropdown. It opens an Android single-choice list, which remains vertically scrollable on small and older phones even with the expanded portrait/landscape ratio set.
