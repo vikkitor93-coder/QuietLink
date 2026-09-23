@@ -4,7 +4,7 @@ Updated: **2026-09-23**
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.49 / versionCode 61**  
+Current release: **v0.3.50 / versionCode 62**  
 Latest release CI: **passed**
 
 ---
@@ -162,6 +162,25 @@ Internet-path recovery still needs to become transport-independent.
 ---
 
 # 6. Online P2P work completed
+
+
+## v0.3.50 — Older-phone updater signer compatibility
+
+User-reported regression:
+- The older phone again showed **Stage: package / Reason: signature_mismatch** when using CHECK UPDATE after the v2 signer migration.
+- This means download/checksum/package/version checks passed and QuietLink's own signer comparison rejected the APK before Android installer handoff.
+
+Cause/fix:
+- Some older/OEM PackageManager implementations can expose the already-rotated installed app and a downloaded rotated APK with different certificate-history shapes even when both current signers are the same v2 certificate.
+- QuietLink now has a narrow post-rotation compatibility path that accepts only when both sides' **current signer is exactly the pinned QuietLink v2 signer**.
+- Unknown signers, multiple signers, package/version/checksum checks, and the old→v2 migration rules remain unchanged.
+- Android's installer still enforces signing-lineage compatibility.
+- Diagnostics record only categorical current-v2/source/history-count state and never certificate contents/digests.
+- v0.3.49 internet transport behavior is unchanged.
+
+Important deployment consequence:
+- A phone whose current updater rejects v0.3.50 cannot use that same broken updater to install the fix. Give it the signed v0.3.50 APK once for a normal manual in-place Android update. After that, CHECK UPDATE should use the repaired comparison path.
+
 
 
 ## v0.3.49 — Internet session checkpoint: opaque QL5 control relay + direct UDP media
@@ -537,15 +556,15 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: deploy v0.3.49 relay server and validate the first real encrypted internet Voice session
+## Primary next checkpoint: install v0.3.50 on the older phone, then deploy/validate the first real encrypted internet Voice session
 
 The v0.3.48 production rendezvous flow was user-confirmed. v0.3.49 now implements the first actual cross-network session path while preserving QL5 and local-first ordering.
 
-Immediate human step after v0.3.49 CI passes:
+Immediate human step after v0.3.50 CI passes:
 1. On the permanent Raspberry Pi: `cd ~/QuietLink && git pull --ff-only`.
 2. Reinstall/restart from current source: `sudo bash rendezvous/pi/install.sh`.
 3. Verify local and public `/health` report `phase=control-relay-test` and build `pi-python-control-relay`.
-4. Install v0.3.49 on both phones.
+4. Install v0.3.50 on both phones. On the older phone that currently reports signature_mismatch, use the provided signed APK manually once; do not uninstall the existing app.
 5. Phone A on Wi-Fi, Phone B on mobile data; do not configure a developer rendezvous override.
 6. Use the same six-digit CODE, one HOST and one JOIN, in Voice mode.
 7. Confirm both reach **Connected • Voice • Online** and show the same QL5 verification phrase.

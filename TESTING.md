@@ -227,3 +227,8 @@
 184. Internet privacy regression: exported diagnostics must contain no public IP, mapped port, raw code, room/peer token, candidate payload, relay payload, session key, chat text, audio, or video content.
 185. UDP fallback decision: if both phones reach **Connected • Voice • Online** but audio RX remains zero, record the privacy-safe diagnostics. That indicates the direct UDP NAT path failed and the next checkpoint is opaque encrypted media relay fallback.
 
+186. Older-phone rotated signer regression: from the older phone already on a v2-signed QuietLink build, CHECK UPDATE to v0.3.50 must not fail with **Stage: package / Reason: signature_mismatch** merely because installed/archive signing histories have different shapes.
+187. Pinned-current-signer compatibility: the compatibility path may pass only when both installed and archive current signer resolve to the exact pinned QuietLink v2 signer; unknown/multiple signers must still fail closed.
+188. Android installer lineage guard: after QuietLink's pre-install signer check passes, Android must still present a normal in-place Update and preserve existing app data.
+189. Signer diagnostic privacy: exported diagnostics may include only categorical flags/counts such as current-v2 yes/no, legacy-source yes/no, and history counts; certificate bytes/digests must remain absent.
+

@@ -340,6 +340,21 @@ final class UpdateManager {
             return;
         }
 
+        // Some older/OEM PackageManager implementations expose the already-
+        // rotated v2 signer correctly as the current signer, but return
+        // different certificate-history shapes for the installed package and
+        // an APK archive. Once both sides' CURRENT signer is exactly the pinned
+        // v2 certificate, that is sufficient for QuietLink's pre-install check;
+        // Android's package installer still enforces the platform signing
+        // lineage before installation.
+        if (samePinnedV2CurrentSigner(installed, archive,
+                installedCerts, archiveCerts,
+                installedLegacy, archiveLegacy)) {
+            QuietLog.log("UPDATE", "signer_post_rotation",
+                    "approved=1 compatibility=history_shape");
+            return;
+        }
+
         if (approvedSignerRotation(installed, archive,
                 installedCerts, archiveCerts,
                 installedLegacy, archiveLegacy)) {
@@ -351,6 +366,41 @@ final class UpdateManager {
 
         QuietLog.log("UPDATE", "signer_rotation", "approved=0");
         throw new UpdateVerificationException("signature_mismatch");
+    }
+
+    private static boolean samePinnedV2CurrentSigner(PackageInfo installed,
+                                                     PackageInfo archive,
+                                                     Set<String> installedCerts,
+                                                     Set<String> archiveCerts,
+                                                     boolean installedLegacy,
+                                                     boolean archiveLegacy)
+            throws Exception {
+        boolean installedIsV2 = pinnedCurrentSigner(
+                installed, installedCerts, installedLegacy, NEXT_SIGNER_SHA256);
+        boolean archiveIsV2 = pinnedCurrentSigner(
+                archive, archiveCerts, archiveLegacy, NEXT_SIGNER_SHA256);
+
+        QuietLog.log("UPDATE", "signer_shape",
+                "installed_current_v2=" + (installedIsV2 ? 1 : 0)
+                        + " archive_current_v2=" + (archiveIsV2 ? 1 : 0)
+                        + " installed_history_count=" + installedCerts.size()
+                        + " archive_history_count=" + archiveCerts.size());
+
+        return installedIsV2 && archiveIsV2;
+    }
+
+    private static boolean pinnedCurrentSigner(PackageInfo info,
+                                               Set<String> observedCerts,
+                                               boolean legacy,
+                                               String pinnedDigest)
+            throws Exception {
+        if (legacy || info == null || info.signingInfo == null) {
+            return observedCerts.size() == 1 && observedCerts.contains(pinnedDigest);
+        }
+
+        if (info.signingInfo.hasMultipleSigners()) return false;
+        Set<String> current = currentSignerDigests(info);
+        return current.size() == 1 && current.contains(pinnedDigest);
     }
 
     private static boolean approvedSignerRotation(PackageInfo installed,

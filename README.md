@@ -1,4 +1,4 @@
-# QuietLink 0.3.49
+# QuietLink 0.3.50
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,15 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.50 older-phone updater signer compatibility
+- Fixes a false **Stage: package / Reason: signature_mismatch** seen again on the older Android phone after the v2 signing-key rotation.
+- Some Android/OEM PackageManager implementations report the installed rotated app and a downloaded rotated APK with different certificate-history arrays even when both have the same current v2 signer.
+- QuietLink now accepts that compatibility case only when the **current signer on both sides is exactly the pinned QuietLink v2 certificate**.
+- Unknown signers, multiple-signers, wrong package/version/checksum, and the old→v2 migration rules remain rejected/unchanged.
+- Android's package installer still performs the platform signing-lineage verification before installation.
+- Privacy-safe diagnostics record only categorical signer-source/current-v2/history-count state; no certificate bytes or digests are exported.
+- v0.3.49 internet-session behavior is otherwise unchanged.
 
 ## 0.3.49 internet session checkpoint
 - v0.3.48 production rendezvous matching was user-confirmed across Wi-Fi ↔ mobile data with no developer override.

@@ -1,7 +1,7 @@
 # QuietLink milestones
 
 Updated: 2026-09-23  
-Current release: **v0.3.49**  
+Current release: **v0.3.50**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -44,6 +44,7 @@ Source of truth: **GitHub main**
    - ✅ All five live branches rewritten to sanitized history
    - ✅ Legacy APK/source artifacts purged
    - ✅ Post-purge full-history audit: zero credential-pattern findings
+   - ✅ v0.3.50 older-OEM rotated-v2 signer history-shape compatibility fix
 
 7. ⏳ Online P2P + rendezvous
    - ✅ Online availability/status dot with helpful local-only fallback
@@ -109,7 +110,7 @@ Source of truth: **GitHub main**
 
 ## Current truth
 
-v0.3.48 production rendezvous matching is user-validated. v0.3.49 adds the first actual encrypted internet session path: QL5 control/chat through a bounded opaque relay plus direct encrypted UDP media. Permanent-Pi deployment and a real two-phone Voice/audio test are the next checkpoint; internet recovery and media relay fallback remain pending.
+v0.3.48 production rendezvous matching is user-validated. v0.3.49 added the first actual encrypted internet session path: QL5 control/chat through a bounded opaque relay plus direct encrypted UDP media. v0.3.50 carries the same internet-session work plus an older-phone updater signer-compatibility fix. Permanent-Pi deployment and a real two-phone Voice/audio test remain the next networking checkpoint.
 
 The Online status dot remains conservative/red while `onlineCallsAvailable=false`, but the published status document now supplies the permanent production `rendezvousUrl` for automatic signaling.
 
