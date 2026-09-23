@@ -1,7 +1,7 @@
 # QuietLink milestones
 
-Updated: 2026-09-22  
-Current release: **v0.3.47**  
+Updated: 2026-09-23  
+Current release: **v0.3.48**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -62,25 +62,31 @@ Source of truth: **GitHub main**
    - ✅ Permanent delegated domain acquired: rendezvousquietlinkvikman.dpdns.org
    - ✅ Cloudflare zone onboarding accepted; DNS review reached successfully
    - ✅ DigitalPlat nameservers changed to Cloudflare-assigned nameservers
-   - ⏳ Activate zone in Cloudflare
+   - ✅ Cloudflare zone active
    - ✅ Temporary Cloudflare Quick Tunnel reached the Pi successfully
-   - ⏳ Create permanent Cloudflare Tunnel to Pi localhost
+   - ✅ Permanent Cloudflare Tunnel installed as a Pi systemd service
+   - ✅ Permanent published route: rendezvousquietlinkvikman.dpdns.org → 127.0.0.1:8787
+   - ✅ Public HTTPS /health verified
    - ✅ Developer-only local rendezvous URL override implemented
    - ✅ In-app HTTPS rendezvous health test implemented
    - ✅ Test-mode candidate-match status visible without endpoint disclosure
    - ✅ Pi public /dev disabled by default; JSON-only API and security headers added
    - ✅ CI real host/join/candidate exchange smoke test added
-   - ⏳ Live two-peer candidate exchange against the Pi rendezvous
+   - ✅ Live two-peer candidate exchange against the permanent Pi rendezvous
+   - ✅ Production rendezvous URL published to normal QuietLink configuration
+   - ✅ Local-first 1.5 s rendezvous fallback integration implemented
+   - ✅ Saved developer override for the official URL auto-migrates to production behavior
+   - ⏳ Validate v0.3.48 normal CODE flow across Wi-Fi ↔ mobile data with no developer override
    - ⏳ Direct internet P2P dialing/acceptance
    - ⏳ Internet-path self-healing recovery
-   - ⏳ Temporary hosted rendezvous production test
 
 8. ⏳ Raspberry Pi rendezvous server
-   - ⏳ Promote the Pi from milestone-7 test infrastructure to the permanent rendezvous deployment
-   - ⏳ Give it a stable production HTTPS hostname/tunnel
-   - ⏳ Finalize start-on-boot/service hardening and recovery
-   - ⏳ Validate long-duration Android clients against the Pi endpoint
-   - ⏳ Keep privacy-safe operational logs only
+   - ✅ Pi promoted to the permanent rendezvous deployment
+   - ✅ Stable production HTTPS hostname/tunnel
+   - ✅ quietlink-rendezvous and cloudflared configured as systemd services
+   - ⏳ Reboot/power-loss automatic recovery validation
+   - ⏳ Long-duration Android client validation against the permanent endpoint
+   - ✅ Privacy-safe operational logging only
 
 9. ⏳ HTML/WebRTC client
    - ⏳ Browser-compatible signaling
@@ -96,9 +102,9 @@ Source of truth: **GitHub main**
 
 ## Current truth
 
-v0.3.47 is the current stable release and completes the Android signing-key rotation to the private v2 signer. Internet calling remains under milestone 7.
+v0.3.48 automatically uses the permanent Raspberry Pi/Cloudflare rendezvous in normal CODE host/join after a short local-first delay. Full direct internet session establishment and recovery remain under milestone 7.
 
-The Online status dot remains red/local-only while the published status document reports `onlineCallsAvailable=false` and has no active `rendezvousUrl`.
+The Online status dot remains conservative/red while `onlineCallsAvailable=false`, but the published status document now supplies the permanent production `rendezvousUrl` for automatic signaling.
 
 Local LAN / Hotspot / Wi-Fi Direct remains the working/default path and must continue working even if every online component is unavailable.
 
