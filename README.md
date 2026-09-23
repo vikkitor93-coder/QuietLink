@@ -1,4 +1,4 @@
-# QuietLink 0.3.54
+# QuietLink 0.3.55
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,24 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.55 compact ROTATE ONLY panel + self-preview aspect fix
+- Adds **🛠 -> ROTATE ONLY • compact live panel** as a fast orientation-testing surface during real Video/Baby calls.
+- The panel is anchored to the bottom, does not dim the call, and deliberately leaves the live video visible above it.
+- It contains the high-frequency orientation controls in one place:
+  - sender Auto / 0° / 90° / 180° / 270°
+  - remote offset 0° / 90° / 180° / 270°
+  - remote Direct / Inverse
+  - QL / Android / WebRTC / Sensor formula
+  - local preview Stream / Display / None / Inverse
+  - Display / Physical orientation source
+  - per-frame H.264 TX and RX toggles
+  - local mirror toggle
+- Every tap applies live and refreshes **inside the same dialog**. The panel stays open and restores its inner scroll position instead of returning to the developer menu/top.
+- The full rotation lab remains available through **FULL LAB** for codec/JPEG tests and other lower-frequency controls.
+- The small local camera preview no longer sizes itself from phone UI orientation. Its box follows the current local preview rotation and the H.264 TextureView now uses fit/preserve-aspect behavior instead of local center-crop behavior.
+- Leaving in-place fullscreen also restores the correct inline preview gravity/aspect.
+- Portrait orientation has now been manually corrected on both test phones using rotation-lab settings; landscape validation is still pending before production defaults are changed.
 
 ## 0.3.54 rotation lab dialog compatibility
 - Fixes the older Android phone showing the **Video rotation lab** title/summary but none of the selectable controls.
