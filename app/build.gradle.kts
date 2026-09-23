@@ -8,8 +8,8 @@ android {
         applicationId = "is.quietlink.app"
         minSdk = 28
         targetSdk = 36
-        versionCode = 69
-        versionName = "0.3.57"
+        versionCode = 70
+        versionName = "0.3.58"
     }
 
     buildTypes {

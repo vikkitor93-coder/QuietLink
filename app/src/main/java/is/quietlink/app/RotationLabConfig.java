@@ -65,11 +65,139 @@ final class RotationLabConfig {
     private static final String KEY_LOCAL_ASPECT = "local_aspect";
     private static final String KEY_REMOTE_ASPECT = "remote_aspect";
     private static final String KEY_FULLSCREEN_ASPECT = "fullscreen_aspect";
+    private static final String PROFILE_PREFIX = "profile_";
 
     private RotationLabConfig() {}
 
     private static SharedPreferences prefs(Context context) {
         return context.getSharedPreferences(PREF, Context.MODE_PRIVATE);
+    }
+
+    private static String profileSlot(int mode, boolean fullscreen) {
+        String kind = mode == SessionService.MODE_BABY ? "baby" : "video";
+        return kind + "_" + (fullscreen ? "fullscreen" : "inline");
+    }
+
+    private static String profileKey(int mode, boolean fullscreen, String key) {
+        return PROFILE_PREFIX + profileSlot(mode, fullscreen) + "_" + key;
+    }
+
+    static String profileLabel(int mode, boolean fullscreen) {
+        return (mode == SessionService.MODE_BABY ? "BABY" : "VIDEO")
+                + " • " + (fullscreen ? "FULLSCREEN" : "INLINE");
+    }
+
+    static boolean hasProfile(Context context, int mode, boolean fullscreen) {
+        return prefs(context).getBoolean(
+                profileKey(mode, fullscreen, "saved"), false);
+    }
+
+    static void saveProfile(Context context, int mode, boolean fullscreen) {
+        SharedPreferences p = prefs(context);
+        SharedPreferences.Editor e = p.edit();
+        String pre = PROFILE_PREFIX + profileSlot(mode, fullscreen) + "_";
+        e.putBoolean(pre + "saved", true);
+        e.putInt(pre + KEY_TX_FORMULA, txFormula(context));
+        e.putInt(pre + KEY_SOURCE, rotationSource(context));
+        e.putInt(pre + KEY_PREVIEW, localPreviewMode(context));
+        e.putInt(pre + KEY_LOCAL_PREVIEW_OFFSET, localPreviewOffset(context));
+        e.putBoolean(pre + KEY_MIRROR, mirrorLocalPreview(context));
+        e.putBoolean(pre + KEY_SEND_FRAME_META, sendFrameRotation(context));
+        e.putBoolean(pre + KEY_ACCEPT_FRAME_META, acceptFrameRotation(context));
+        e.putInt(pre + KEY_FORCE_ROTATION, forcedTxRotation(context));
+        e.putInt(pre + KEY_REMOTE_MODE, remoteMode(context));
+        e.putInt(pre + KEY_REMOTE_OFFSET, remoteOffset(context));
+        e.putBoolean(pre + KEY_FORCE_JPEG, forceJpeg(context));
+        e.putInt(pre + KEY_LOCAL_ASPECT, localAspect(context));
+        e.putInt(pre + KEY_REMOTE_ASPECT, remoteAspect(context));
+        e.putInt(pre + KEY_FULLSCREEN_ASPECT, fullscreenAspect(context));
+        e.apply();
+    }
+
+    static boolean applyProfile(Context context, int mode, boolean fullscreen) {
+        SharedPreferences p = prefs(context);
+        String pre = PROFILE_PREFIX + profileSlot(mode, fullscreen) + "_";
+        if (!p.getBoolean(pre + "saved", false)) return false;
+
+        SharedPreferences.Editor e = p.edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putInt(KEY_TX_FORMULA,
+                        p.getInt(pre + KEY_TX_FORMULA, TX_CURRENT))
+                .putInt(KEY_SOURCE,
+                        p.getInt(pre + KEY_SOURCE, SOURCE_DISPLAY))
+                .putInt(KEY_PREVIEW,
+                        p.getInt(pre + KEY_PREVIEW, PREVIEW_STREAM_ROTATION))
+                .putInt(KEY_LOCAL_PREVIEW_OFFSET,
+                        p.getInt(pre + KEY_LOCAL_PREVIEW_OFFSET, 0))
+                .putBoolean(KEY_MIRROR,
+                        p.getBoolean(pre + KEY_MIRROR, true))
+                .putBoolean(KEY_SEND_FRAME_META,
+                        p.getBoolean(pre + KEY_SEND_FRAME_META, false))
+                .putBoolean(KEY_ACCEPT_FRAME_META,
+                        p.getBoolean(pre + KEY_ACCEPT_FRAME_META, false))
+                .putInt(KEY_FORCE_ROTATION,
+                        p.getInt(pre + KEY_FORCE_ROTATION, -1))
+                .putInt(KEY_REMOTE_MODE,
+                        p.getInt(pre + KEY_REMOTE_MODE, REMOTE_DIRECT))
+                .putInt(KEY_REMOTE_OFFSET,
+                        p.getInt(pre + KEY_REMOTE_OFFSET, 0))
+                .putBoolean(KEY_FORCE_JPEG,
+                        p.getBoolean(pre + KEY_FORCE_JPEG, false))
+                .putInt(KEY_LOCAL_ASPECT,
+                        p.getInt(pre + KEY_LOCAL_ASPECT, ASPECT_AUTO))
+                .putInt(KEY_REMOTE_ASPECT,
+                        p.getInt(pre + KEY_REMOTE_ASPECT, ASPECT_AUTO))
+                .putInt(KEY_FULLSCREEN_ASPECT,
+                        p.getInt(pre + KEY_FULLSCREEN_ASPECT, ASPECT_AUTO));
+        e.apply();
+        return true;
+    }
+
+    static String profileSummary(Context context, int mode, boolean fullscreen) {
+        SharedPreferences p = prefs(context);
+        String pre = PROFILE_PREFIX + profileSlot(mode, fullscreen) + "_";
+        boolean saved = p.getBoolean(pre + "saved", false);
+
+        int tx = saved ? p.getInt(pre + KEY_TX_FORMULA, TX_CURRENT) : txFormula(context);
+        int source = saved ? p.getInt(pre + KEY_SOURCE, SOURCE_DISPLAY) : rotationSource(context);
+        int preview = saved ? p.getInt(pre + KEY_PREVIEW, PREVIEW_STREAM_ROTATION) : localPreviewMode(context);
+        int previewOffset = saved ? p.getInt(pre + KEY_LOCAL_PREVIEW_OFFSET, 0) : localPreviewOffset(context);
+        boolean mirror = saved ? p.getBoolean(pre + KEY_MIRROR, true) : mirrorLocalPreview(context);
+        boolean frameTx = saved ? p.getBoolean(pre + KEY_SEND_FRAME_META, false) : sendFrameRotation(context);
+        boolean frameRx = saved ? p.getBoolean(pre + KEY_ACCEPT_FRAME_META, false) : acceptFrameRotation(context);
+        int forced = saved ? p.getInt(pre + KEY_FORCE_ROTATION, -1) : forcedTxRotation(context);
+        int remoteModeValue = saved ? p.getInt(pre + KEY_REMOTE_MODE, REMOTE_DIRECT) : remoteMode(context);
+        int remoteOffsetValue = saved ? p.getInt(pre + KEY_REMOTE_OFFSET, 0) : remoteOffset(context);
+        int localAspectValue = saved ? p.getInt(pre + KEY_LOCAL_ASPECT, ASPECT_AUTO) : localAspect(context);
+        int remoteAspectValue = saved ? p.getInt(pre + KEY_REMOTE_ASPECT, ASPECT_AUTO) : remoteAspect(context);
+        int fullAspectValue = saved ? p.getInt(pre + KEY_FULLSCREEN_ASPECT, ASPECT_AUTO) : fullscreenAspect(context);
+        boolean jpeg = saved ? p.getBoolean(pre + KEY_FORCE_JPEG, false) : forceJpeg(context);
+
+        return "QuietLink " + profileLabel(mode, fullscreen)
+                + " profile"
+                + "\nWindow 1: direction=" + remoteModeLabel(remoteModeValue)
+                + ", offset=+" + normalizeQuarter(remoteOffsetValue) + "°"
+                + ", aspect=" + aspectLabel(fullscreen ? fullAspectValue : remoteAspectValue)
+                + ", frameRX=" + (frameRx ? "ON" : "OFF")
+                + "\nWindow 2: preview=" + previewLabel(preview)
+                + ", offset=+" + normalizeQuarter(previewOffset) + "°"
+                + ", aspect=" + aspectLabel(localAspectValue)
+                + ", mirror=" + (mirror ? "ON" : "OFF")
+                + "\nSender: rotation=" + forcedLabel(forced)
+                + ", formula=" + txFormulaLabel(tx)
+                + ", source=" + sourceLabel(source)
+                + ", frameTX=" + (frameTx ? "ON" : "OFF")
+                + ", codec=" + (jpeg ? "JPEG" : "AUTO/H264");
+    }
+
+    static void clearProfile(Context context, int mode, boolean fullscreen) {
+        SharedPreferences p = prefs(context);
+        String pre = PROFILE_PREFIX + profileSlot(mode, fullscreen) + "_";
+        SharedPreferences.Editor e = p.edit();
+        for (String key : p.getAll().keySet()) {
+            if (key != null && key.startsWith(pre)) e.remove(key);
+        }
+        e.apply();
     }
 
     static boolean enabled(Context context) {

@@ -1,7 +1,7 @@
 # QuietLink milestones
 
 Updated: 2026-09-23  
-Current release: **v0.3.57**  
+Current release: **v0.3.58**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -57,6 +57,11 @@ Source of truth: **GitHub main**
    - ✅ v0.3.57 numbered Window 1/2 calibration UI
    - ✅ v0.3.57 true portrait aspect ratios including 9:16
    - ✅ v0.3.57 independent mini-preview rotation offset
+   - ✅ v0.3.58 scrollable aspect selector
+   - ✅ v0.3.58 mode/presentation-specific saved video calibration profiles
+   - ✅ v0.3.58 copyable profile summaries for user reporting
+   - ✅ v0.3.58 encrypted privacy-safe diagnostic .txt transfer in chat
+   - ⏳ Human: save/report working profiles per phone/mode and validate log transfer
    - ⏳ Human: identify correct Window 1 and Window 2 aspect/rotation settings
    - ⏳ Human: retest Wi-Fi-off mobile-data CODE connection
    - ⏳ Human: identify non-stretched aspect + finish fullscreen landscape rotation matrix

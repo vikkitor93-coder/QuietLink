@@ -41,11 +41,27 @@ public final class SessionBus {
         public final boolean mine;
         public final String text;
         public final long timeMs;
+        public final String fileName;
+        public final String filePath;
+        public final long fileSize;
 
         public ChatMessage(boolean mine, String text, long timeMs) {
+            this(mine, text, timeMs, null, null, 0L);
+        }
+
+        public ChatMessage(boolean mine, String text, long timeMs,
+                           String fileName, String filePath, long fileSize) {
             this.mine = mine;
-            this.text = text;
+            this.text = text == null ? "" : text;
             this.timeMs = timeMs;
+            this.fileName = fileName;
+            this.filePath = filePath;
+            this.fileSize = Math.max(0L, fileSize);
+        }
+
+        public boolean isFile() {
+            return fileName != null && !fileName.isEmpty()
+                    && filePath != null && !filePath.isEmpty();
         }
     }
 
@@ -370,6 +386,27 @@ public final class SessionBus {
         if (clean.isEmpty()) return;
         if (clean.length() > 1000) clean = clean.substring(0, 1000);
         chatMessages.add(new ChatMessage(mine, clean, System.currentTimeMillis()));
+        while (chatMessages.size() > 100) chatMessages.remove(0);
+        if (!mine) unreadChatCount = Math.min(99, unreadChatCount + 1);
+        Listener l = listener;
+        if (l != null) l.onChatMessagesChanged(chatSnapshot());
+    }
+
+    public static synchronized void chatFile(boolean mine,
+                                             String fileName,
+                                             String filePath,
+                                             long fileSize) {
+        if (fileName == null || filePath == null) return;
+        String safeName = fileName.trim();
+        if (safeName.isEmpty()) safeName = "QuietLink-log.txt";
+        if (safeName.length() > 80) safeName = safeName.substring(0, 80);
+        chatMessages.add(new ChatMessage(
+                mine,
+                safeName,
+                System.currentTimeMillis(),
+                safeName,
+                filePath,
+                fileSize));
         while (chatMessages.size() > 100) chatMessages.remove(0);
         if (!mine) unreadChatCount = Math.min(99, unreadChatCount + 1);
         Listener l = listener;
