@@ -113,6 +113,7 @@ public final class VideoEngine implements AutoCloseable {
     private volatile boolean h264Enabled = false;
     private volatile boolean h264Session = false;
     private volatile boolean peerCanonicalRotation = false;
+    private volatile boolean appliedCanonicalRotation = false;
     private long lastAdaptAtMs = 0;
     private int stableAdaptSamples = 0;
     private volatile boolean remoteVideoExpected = true;
@@ -311,6 +312,8 @@ public final class VideoEngine implements AutoCloseable {
 
     private void updateRotationProtocolState(boolean restartCameraIfChanged) {
         boolean canonical = canonicalRotationActive();
+        boolean changed = appliedCanonicalRotation != canonical;
+        appliedCanonicalRotation = canonical;
         SessionBus.canonicalVideoRotation(canonical);
         h264.setRotationMetadataMode(
                 canonical || RotationLabConfig.sendFrameRotation(context),
@@ -324,7 +327,8 @@ public final class VideoEngine implements AutoCloseable {
             SessionBus.videoRotation(remoteRotationDegrees);
         }
 
-        if (restartCameraIfChanged && running.get() && sendingEnabled && h264Enabled) {
+        if (restartCameraIfChanged && changed
+                && running.get() && sendingEnabled && h264Enabled) {
             startCamera(currentFacing);
         }
     }
@@ -1096,8 +1100,7 @@ public final class VideoEngine implements AutoCloseable {
     }
 
     public void applyRotationLabConfig() {
-        boolean before = canonicalRotationActive();
-        updateRotationProtocolState(false);
+        updateRotationProtocolState(true);
         h264.setLocalFrameRotation(lastCaptureRotation);
 
         // Force local + remote TextureViews to re-evaluate their transforms
@@ -1106,10 +1109,6 @@ public final class VideoEngine implements AutoCloseable {
         refreshOrientation();
 
         boolean after = canonicalRotationActive();
-        if (before != after && running.get() && sendingEnabled && h264Enabled) {
-            startCamera(currentFacing);
-        }
-
         QuietLog.log("VIDEO", "rotation_lab_apply",
                 "enabled=" + (RotationLabConfig.enabled(context) ? 1 : 0)
                         + " tx=" + RotationLabConfig.txFormulaLabel(
