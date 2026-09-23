@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "working",
-  "task": "Separate video calibration by Window 1 and Window 2",
-  "summary": "v0.3.57 numbers the main incoming and mini/self windows, adds a Window 1/2 dropdown with per-window controls, adds independent mini rotation offset, and true portrait aspect ratios including 9:16. CI is next; internet CODE validation from v0.3.56 remains pending.",
-  "updated_at": "2026-09-23T16:34:00Z",
-  "artifact": "QuietLink v0.3.57"
+  "status": "partial",
+  "task": "Validate numbered per-window video calibration",
+  "summary": "v0.3.57 built, signed, tested, and published successfully. Human test now needed: verify Window 1/2 badges and dropdown, find the correct Window 2 portrait aspect (including 9:16), tune per-window rotation independently, and complete the pending Wi-Fi-off mobile-data CODE regression test.",
+  "updated_at": "2026-09-23T16:40:00Z",
+  "artifact": "QuietLink v0.3.57 APK"
 }
