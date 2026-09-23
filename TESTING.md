@@ -206,3 +206,11 @@
 165. Rotated signer rejection: an APK with the correct package/version/checksum but a signer other than the pinned current signer or pinned v2 signer must fail with `signature_mismatch`.
 166. Modern lineage check: on a device with `SigningInfo`, the rotated archive must report the v2 signer as current and include both old and v2 certificates in signing history.
 167. Legacy signer compatibility: on the older phone if modern signer data remains unavailable, the bridge may allow exactly old-current → v2-current; Android installer must still approve the APK lineage before installation.
+
+168. Production rendezvous auto-migration: on a phone that previously saved `https://rendezvousquietlinkvikman.dpdns.org` as the developer rendezvous override, upgrade to v0.3.48 and start a CODE host/join session. Confirm QuietLink automatically promotes that exact URL to production behavior rather than showing TEST-mode status.
+169. Local-first timing: with both phones on the same LAN, start the same CODE room and confirm LAN discovery begins immediately; production rendezvous must not prevent the local connection and should only start after the short ~1.5 s head start if the session is still unconnected.
+170. Production rendezvous normal flow: put Phone A on Wi-Fi and Phone B on mobile data, use the same six-digit CODE without configuring any developer rendezvous override, and confirm the waiting UI reaches **Internet peer found • checking connection paths…** when rendezvous matches them.
+171. Permanent endpoint publication: fetch the published QuietLink `online-status.json` after the release and confirm `rendezvousUrl` is `https://rendezvousquietlinkvikman.dpdns.org` while `onlineCallsAvailable` remains false during validation.
+172. Production rendezvous outage regression: stop/unplug the Pi or Cloudflare tunnel, then put both phones on the same LAN and verify CODE calling still succeeds locally despite rendezvous failure.
+173. Developer override preservation: save a different valid HTTPS developer rendezvous URL and confirm v0.3.48 still uses that override in TEST mode instead of silently replacing it with production.
+174. Production rendezvous privacy: export diagnostics after test 170 and verify no public IP, mapped port, raw six-digit code, room token, peer token, candidate payload, or production endpoint hostname is exposed.
