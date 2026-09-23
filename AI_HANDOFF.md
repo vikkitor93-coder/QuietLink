@@ -4,8 +4,8 @@ Updated: **2026-09-23**
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.52 / versionCode 64**  
-Latest release CI: **passed**
+Current release: **v0.3.53 / versionCode 65**  
+Latest release CI: **pending v0.3.53 validation**
 
 ---
 
@@ -162,6 +162,28 @@ Internet-path recovery still needs to become transport-independent.
 ---
 
 # 6. Online P2P work completed
+
+
+## v0.3.53 — Sleeping Baby apparent audio regression traced to unintended role transition
+
+Evidence from the user's privacy-safe log:
+- Older phone as Baby Station: mic unmuted, capture gate opened, recorder started, and `tx_flow active=1`.
+- After Sleeping Baby was enabled and Parent Station re-enabled the baby mic, recorder rebuilt/resumed and `tx_flow active=1` continued.
+- Later the same phone showed `playback_gate open=1` immediately followed by `capture_gate open=0`, then emitted `remote_baby_mic_request` and PTT events. Those actions are Parent Station-only.
+- Therefore the microphone/audio transport was healthy; the phone had transitioned from Baby Station to Parent Station, where continuous capture is intentionally disabled.
+
+Fix:
+- SWAP is no longer a one-tap role transition. It opens a confirmation describing exactly what will happen to microphone/camera behavior.
+- Only confirmed SWAP invokes `ACTION_SWAP_BABY_ROLE`.
+- Service records privacy-safe `baby_role_swap_request source=local|peer from=... to=...` and `baby_role_changed` events so any future unexpected role transition has an attributable source.
+- No change was made to the Baby Station continuous microphone transport because the trace proved capture and TX were operating.
+
+Critical next human test:
+- v0.3.52 is currently installed manually on the older phone. v0.3.53 should be installed via **CHECK UPDATE** on that phone, specifically to validate the v0.3.52 legacy archive signer compatibility fix.
+- Then run Sleeping Baby with the older phone as Baby Station for at least 10 minutes with baby mic enabled, without confirming SWAP. Audio must continue.
+- Cancel a SWAP confirmation once and verify the role/audio do not change.
+- Optionally confirm one intentional role swap and verify the log attributes it to `source=local`.
+
 
 
 ## v0.3.52 — Older-Android archive signer compatibility
@@ -614,22 +636,19 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: manually install v0.3.52 on the older phone, verify updater continuity, then continue the video rotation matrix
+## Primary next checkpoint: CHECK UPDATE v0.3.52→v0.3.53 on the older phone, then validate Baby Station continuous audio
 
-Immediate human step after v0.3.52 CI passes:
-1. Manually install the signed v0.3.52 APK on the older phone **without uninstalling**.
-2. Install/update v0.3.52 on the newer phone.
-3. Confirm both retain their existing QuietLink state and show v0.3.52.
-4. The next release after v0.3.52 must be tested through **CHECK UPDATE** on the older phone to verify the documented legacy-archive compatibility path finally removes the manual-APK requirement.
-5. Then resume the v0.3.51 rotation-lab matrix on same-LAN Video mode:
-   - Production baseline
-   - Android official + TextureView display-only
-   - WebRTC + per-frame metadata
-   - Android + per-frame metadata
-   - front/back, portrait, landscape-left, landscape-right
-   - Force JPEG comparison once
-6. After a proven orientation combination is found, promote only the smallest proven subset to production.
-7. Then resume the queued permanent-Pi and Wi-Fi ↔ mobile-data internet Voice checkpoint.
+After v0.3.53 CI passes:
+1. **Do not manually install v0.3.53 on the older phone first.** Open v0.3.52 and use CHECK UPDATE. This validates the v0.3.52 signer compatibility fix.
+2. Confirm Android performs an in-place update to v0.3.53 with QuietLink state preserved.
+3. Update the newer phone to v0.3.53.
+4. Start Sleeping Baby on the same LAN with the older phone as **Baby Station** and Baby microphone ON.
+5. Let it run for at least 10 minutes. Confirm parent hears continuous room audio.
+6. Tap SWAP on the older phone, then Cancel. The role must not change and audio must continue.
+7. If desired, intentionally confirm SWAP once; the role should change and continuous Baby TX may stop by design.
+8. If audio stops without a confirmed swap, export the privacy-safe log. The new role-source events should identify whether any transition came from local UI or peer control.
+9. Once this passes, resume the Video rotation lab matrix.
+10. Then resume the queued permanent-Pi/internet Voice checkpoint.
 
 ---
 
