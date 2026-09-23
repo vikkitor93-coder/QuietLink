@@ -1,4 +1,4 @@
 channel=stable
-versionName=0.3.58
-versionCode=70
+versionName=0.3.59
+versionCode=71
 publishFrom=main

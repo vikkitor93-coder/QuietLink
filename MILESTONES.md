@@ -1,7 +1,7 @@
 # QuietLink milestones
 
 Updated: 2026-09-23  
-Current release: **v0.3.58**  
+Current release: **v0.3.59**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -61,6 +61,11 @@ Source of truth: **GitHub main**
    - ✅ v0.3.58 mode/presentation-specific saved video calibration profiles
    - ✅ v0.3.58 copyable profile summaries for user reporting
    - ✅ v0.3.58 encrypted privacy-safe diagnostic .txt transfer in chat
+   - ✅ v0.3.59 gzip + progress + failure-isolated diagnostic transfer repair
+   - ✅ v0.3.59 saved calibration profiles embedded in diagnostic export
+   - ✅ v0.3.59 privacy-safe uncaught crash fingerprint
+   - ✅ v0.3.59 Wi-Fi Direct permission/startup/retry regression repair
+   - ⏳ Human: re-test log transfer on both phones and no-router Wi-Fi Direct CODE
    - ⏳ Human: save/report working profiles per phone/mode and validate log transfer
    - ⏳ Human: identify correct Window 1 and Window 2 aspect/rotation settings
    - ⏳ Human: retest Wi-Fi-off mobile-data CODE connection

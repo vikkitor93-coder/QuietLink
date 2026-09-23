@@ -97,6 +97,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     private TextView diagnosticsText;
     private LinearLayout chatMessageList;
     private ScrollView chatScroll;
+    private ProgressBar chatTransferProgress;
+    private TextView chatTransferStatus;
     private boolean wifiWarningDismissedThisForeground = false;
     private boolean restoringPersistedSession = false;
     private String lastDisconnectBanner = null;
@@ -2226,6 +2228,15 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                         + " internet_allowed=1");
         pendingHost = host; pendingCode = code; pendingMode = requestedMode;
         List<String> missing = missingPermissions(requestedMode, host);
+
+        // Wi-Fi Direct is an optional CODE transport, not a prerequisite for
+        // internet calling. Ask for its runtime permission when Wi-Fi is on,
+        // but the request result never blocks CODE from starting if denied.
+        String optionalP2p = optionalWifiDirectPermission();
+        if (optionalP2p != null && !missing.contains(optionalP2p)) {
+            missing.add(optionalP2p);
+        }
+
         if (!missing.isEmpty()) {
             requestPermissions(missing.toArray(new String[0]), 42);
             return;
@@ -2249,9 +2260,12 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == 42 && pendingHost != null && pendingCode != null) {
             List<String> missing = missingPermissions(pendingMode, pendingHost);
-            if (missing.isEmpty()) launchSession(pendingHost, pendingCode, pendingMode);
-            else {
-                Toast.makeText(this, "QuietLink needs the requested nearby/microphone/camera permissions for this mode", Toast.LENGTH_LONG).show();
+            if (missing.isEmpty()) {
+                // Nearby Wi-Fi may have been denied; that only disables the
+                // optional Wi-Fi Direct fallback. Internet/LAN CODE still starts.
+                launchSession(pendingHost, pendingCode, pendingMode);
+            } else {
+                Toast.makeText(this, "QuietLink needs the microphone/camera permission for this mode", Toast.LENGTH_LONG).show();
                 pendingHost = null; pendingCode = null;
             }
         } else if (requestCode == 43) {
@@ -3602,9 +3616,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         box.addView(note, lp(-1,-2,0,0,0,6));
 
         if (devUnlocked && !devDummySession) {
-            Button sendLog = secondary("📄 SEND MY LOG");
+            Button sendLog = secondary("📄 SEND LOG + PROFILES");
             sendLog.setTextSize(10);
-            sendLog.setContentDescription("Send this phone's privacy-safe diagnostic log as a text file");
+            sendLog.setContentDescription("Send this phone's privacy-safe diagnostic log and saved video profiles as a text file");
             sendLog.setOnClickListener(v -> {
                 try {
                     startService(new Intent(this, SessionService.class)
@@ -3614,7 +3628,19 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                             Toast.LENGTH_SHORT).show();
                 } catch (Exception ignored) {}
             });
-            box.addView(sendLog, lp(-1,dp(38),0,0,0,6));
+            box.addView(sendLog, lp(-1,dp(38),0,0,0,4));
+
+            chatTransferStatus = text("", 9, muted(), false);
+            chatTransferStatus.setVisibility(View.GONE);
+            box.addView(chatTransferStatus, lp(-1,-2,2,0,2,2));
+
+            chatTransferProgress = new ProgressBar(
+                    this, null, android.R.attr.progressBarStyleHorizontal);
+            chatTransferProgress.setMax(100);
+            chatTransferProgress.setProgress(0);
+            chatTransferProgress.setVisibility(View.GONE);
+            box.addView(chatTransferProgress, lp(-1,dp(6),2,0,2,6));
+            updateChatTransferProgress(SessionBus.fileTransferProgress());
         }
 
         chatScroll = new ScrollView(this);
@@ -3671,6 +3697,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             chatDialog = null;
             chatMessageList = null;
             chatScroll = null;
+            chatTransferProgress = null;
+            chatTransferStatus = null;
         });
         chatDialog.setOnShowListener(d -> renderChatMessages(
                 devDummySession ? new ArrayList<>(devChatMessages) : SessionBus.chatSnapshot()));
@@ -4351,6 +4379,18 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         if (!p.isEmpty()) requestPermissions(p.toArray(new String[0]), 41);
     }
 
+    private String optionalWifiDirectPermission() {
+        if (!isWifiRadioEnabled()) return null;
+        if (Build.VERSION.SDK_INT >= 33) {
+            return checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES)
+                    == PackageManager.PERMISSION_GRANTED
+                    ? null : Manifest.permission.NEARBY_WIFI_DEVICES;
+        }
+        return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED
+                ? null : Manifest.permission.ACCESS_FINE_LOCATION;
+    }
+
     private List<String> missingPermissions(int mode, boolean isHost) {
         List<String> p = new ArrayList<>();
         // CODE sessions can run entirely over the internet. Nearby Wi-Fi /
@@ -4759,6 +4799,45 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 updateChatButtonBadge();
             }
         });
+    }
+
+    @Override public void onFileTransferProgress(
+            SessionBus.FileTransferProgress progress) {
+        runOnUiThread(() -> updateChatTransferProgress(progress));
+    }
+
+    private void updateChatTransferProgress(
+            SessionBus.FileTransferProgress progress) {
+        if (chatTransferProgress == null || chatTransferStatus == null) return;
+        if (progress == null) {
+            chatTransferProgress.setVisibility(View.GONE);
+            chatTransferStatus.setVisibility(View.GONE);
+            return;
+        }
+
+        boolean show = progress.active
+                || (progress.label != null && !progress.label.isEmpty());
+        chatTransferProgress.setVisibility(show ? View.VISIBLE : View.GONE);
+        chatTransferStatus.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (!show) return;
+
+        chatTransferProgress.setProgress(progress.percent);
+        chatTransferStatus.setText(progress.label);
+        if (!progress.active) {
+            chatTransferProgress.postDelayed(() -> {
+                SessionBus.FileTransferProgress current =
+                        SessionBus.fileTransferProgress();
+                if (chatTransferProgress != null
+                        && current != null
+                        && !current.active
+                        && current.label.equals(progress.label)) {
+                    chatTransferProgress.setVisibility(View.GONE);
+                    if (chatTransferStatus != null) {
+                        chatTransferStatus.setVisibility(View.GONE);
+                    }
+                }
+            }, 2500L);
+        }
     }
 
     @Override public void onNearbyDevicesChanged(List<PeerDiscovery.Peer> peers) {

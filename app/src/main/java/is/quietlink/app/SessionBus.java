@@ -24,6 +24,7 @@ public final class SessionBus {
         void onSleepingBabyChanged(boolean enabled);
         void onBabyAuxStateChanged(boolean torchEnabled, boolean brightnessBoost, boolean known);
         void onChatMessagesChanged(List<ChatMessage> messages);
+        void onFileTransferProgress(FileTransferProgress progress);
         void onNearbyDevicesChanged(List<PeerDiscovery.Peer> peers);
         void onIncomingRequest(IncomingRequest request);
         void onOutgoingRequest(OutgoingRequest request);
@@ -62,6 +63,25 @@ public final class SessionBus {
         public boolean isFile() {
             return fileName != null && !fileName.isEmpty()
                     && filePath != null && !filePath.isEmpty();
+        }
+    }
+
+    public static final class FileTransferProgress {
+        public final boolean active;
+        public final boolean sending;
+        public final int percent;
+        public final String label;
+
+        public FileTransferProgress(boolean active, boolean sending,
+                                    int percent, String label) {
+            this.active = active;
+            this.sending = sending;
+            this.percent = Math.max(0, Math.min(100, percent));
+            this.label = label == null ? "" : label;
+        }
+
+        static FileTransferProgress idle() {
+            return new FileTransferProgress(false, false, 0, "");
         }
     }
 
@@ -192,6 +212,8 @@ public final class SessionBus {
     public static volatile OutgoingRequest outgoingRequest;
     private static final List<ChatMessage> chatMessages = new ArrayList<>();
     private static int unreadChatCount = 0;
+    private static volatile FileTransferProgress fileTransferProgress =
+            FileTransferProgress.idle();
     public static volatile List<PeerDiscovery.Peer> nearbyPeers = Collections.emptyList();
     private static volatile DiagnosticsSnapshot diagnostics = new DiagnosticsSnapshot(
             "Idle", "Unknown", "None", -1L, -1L,
@@ -230,6 +252,7 @@ public final class SessionBus {
             l.onRemoteVideoRotation(remoteVideoRotation);
             l.onLocalVideoRotation(localVideoRotation);
             l.onChatMessagesChanged(chatSnapshot());
+            l.onFileTransferProgress(fileTransferProgress);
         }
     }
 
@@ -413,6 +436,21 @@ public final class SessionBus {
         if (l != null) l.onChatMessagesChanged(chatSnapshot());
     }
 
+    public static void fileTransferProgress(boolean active,
+                                            boolean sending,
+                                            int percent,
+                                            String label) {
+        FileTransferProgress next = new FileTransferProgress(
+                active, sending, percent, label);
+        fileTransferProgress = next;
+        Listener l = listener;
+        if (l != null) l.onFileTransferProgress(next);
+    }
+
+    public static FileTransferProgress fileTransferProgress() {
+        return fileTransferProgress;
+    }
+
     public static synchronized int unreadChatCount() {
         return unreadChatCount;
     }
@@ -487,6 +525,7 @@ public final class SessionBus {
         peerName = "";
         incomingRequest = null;
         outgoingRequest = null;
+        fileTransferProgress = FileTransferProgress.idle();
         clearChat();
         Listener l = listener;
         if (l != null) l.onDisconnected(reason);

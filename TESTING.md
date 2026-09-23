@@ -324,3 +324,18 @@
 272. Bad-link behavior: interrupt a log transfer mid-send. The partial file must not appear as a completed attachment; ordinary chat/control/session recovery must remain functional.
 273. Wi-Fi Direct regression: with no shared router and required nearby permission granted, CODE should be allowed to reach Android Wi-Fi Direct fallback without requiring a manually-created hotspot; QL5 authentication remains mandatory after the P2P group forms.
 
+274. v0.3.59 updater continuity: update both phones from v0.3.58 through CHECK UPDATE without uninstalling.
+275. Transfer crash regression: connect both phones, open chat on Phone A and tap SEND LOG + PROFILES. Neither activity/service may crash, close, restart, or force the call into reconnect solely because the file transfer is running.
+276. Transfer progress: sender must show a compact Sending diagnostic log progress indicator advancing from 0 toward 100; receiver must show Receiving diagnostic log progress when chat is open. Completed/failed state must be clear rather than leaving the user guessing.
+277. Transfer speed: compare the same diagnostic trace with v0.3.58; v0.3.59 should send gzip-compressed wire bytes and normally require materially fewer encrypted chunks for repetitive log data.
+278. Profile inclusion: save at least VIDEO INLINE and VIDEO FULLSCREEN profiles, SEND LOG + PROFILES, open the received .txt and confirm the Saved video calibration profiles section includes those exact Window 1 / Window 2 / Sender summaries.
+279. Transfer failure isolation: interrupt/impair the link during the diagnostic transfer. The partial attachment must not appear complete, but an optional file-transfer exception must not itself call handleConnectionLoss; normal heartbeat/control detection remains authoritative.
+280. Transfer integrity/bounds: receiver must reject bad order, mismatched compressed/raw size, unsupported encoding, oversized compressed/decompressed data, wrong chunk count or SHA-256 mismatch.
+281. Crash fingerprint: after a controlled developer-only uncaught crash test (if performed), the next privacy-safe export may contain only exception class + QuietLink source site/line, never Throwable message, IP, peer/device identity, room code, keys, chat/media content.
+282. Wi-Fi Direct optional permission: with Wi-Fi radio ON and Nearby Wi-Fi Devices (Android 13+) or Fine Location (Android 12 and below) not granted, starting CODE should request that optional permission. Denying it must still let internet/LAN CODE continue; granting it must enable P2P fallback.
+283. Wi-Fi Direct stale-state regression: after a prior P2P call or aborted P2P negotiation, start a new CODE session. Stale group/request/service state must be cleaned and must not permanently leave createGroup/connect in BUSY.
+284. Wi-Fi Direct connect-failure retry: force one WifiP2pManager.connect failure/BUSY if reproducible. The next matching service response/discovery cycle must be allowed to connect; expectedPort must not remain permanently locked.
+285. Wi-Fi Direct one-shot regression: arrange for a LAN socket attempt to be active at the 8-second fallback point. Wi-Fi Direct discovery must still start and remain available after the LAN attempt fails.
+286. Wi-Fi Direct no-router checkpoint: enable Wi-Fi radio on both phones but do not join the same router and do not create a hotspot. With required P2P permission granted and internet path unavailable/disabled for the test, CODE should form a Wi-Fi Direct group and reach QL5 encrypted session establishment.
+287. Wi-Fi Direct privacy logs: diagnostic events may include state/reason/attempt counts only; do not log peer MAC/device address, group-owner IP, room code or derived room token.
+
