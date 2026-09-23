@@ -4,8 +4,8 @@ Updated: **2026-09-23**
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.53 / versionCode 65**  
-Latest release CI: **passed**
+Current release: **v0.3.54 / versionCode 66**  
+Latest release CI: **pending v0.3.54 validation**
 
 ---
 
@@ -162,6 +162,36 @@ Internet-path recovery still needs to become transport-independent.
 ---
 
 # 6. Online P2P work completed
+
+
+## v0.3.54 — Older-Android rotation-lab dialog compatibility
+
+New human validation:
+- Older phone successfully installed v0.3.53 using **CHECK UPDATE** from v0.3.52. The signer-compatibility updater fix is therefore validated.
+- Sleeping Baby audio from the older phone as Baby Station works again after v0.3.53. The role-swap regression checkpoint is validated.
+
+New UI regression:
+- On the older Android phone, opening **Video rotation lab** showed only:
+  - title,
+  - "Production defaults",
+  - explanatory text,
+  - Close.
+- None of the selectable list items appeared.
+- MainActivity used AlertDialog.Builder with both `setMessage(...)` and `setItems(...)`.
+- On this older platform implementation, the message/list combination does not render the list reliably.
+
+Fix:
+- Rotation lab is now list-first: remove `setMessage` from the main lab menu.
+- Title shows **Video rotation lab • PRODUCTION** or **• TEST**.
+- All existing rotation controls/presets are unchanged.
+- No video pipeline, audio, updater, protocol, security, or local-first behavior changed.
+
+Human test:
+1. Update older phone from v0.3.53 to v0.3.54 using CHECK UPDATE.
+2. Open 🛠 -> Video rotation lab.
+3. Confirm the full control list is visible.
+4. Continue the original rotation preset matrix.
+
 
 
 ## v0.3.53 — Sleeping Baby apparent audio regression traced to unintended role transition
@@ -636,19 +666,26 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: CHECK UPDATE v0.3.52→v0.3.53 on the older phone, then validate Baby Station continuous audio
+## Primary next checkpoint: verify v0.3.54 rotation-lab controls render, then continue orientation testing
 
-After v0.3.53 CI passes:
-1. **Do not manually install v0.3.53 on the older phone first.** Open v0.3.52 and use CHECK UPDATE. This validates the v0.3.52 signer compatibility fix.
-2. Confirm Android performs an in-place update to v0.3.53 with QuietLink state preserved.
-3. Update the newer phone to v0.3.53.
-4. Start Sleeping Baby on the same LAN with the older phone as **Baby Station** and Baby microphone ON.
-5. Let it run for at least 10 minutes. Confirm parent hears continuous room audio.
-6. Tap SWAP on the older phone, then Cancel. The role must not change and audio must continue.
-7. If desired, intentionally confirm SWAP once; the role should change and continuous Baby TX may stop by design.
-8. If audio stops without a confirmed swap, export the privacy-safe log. The new role-source events should identify whether any transition came from local UI or peer control.
-9. Once this passes, resume the Video rotation lab matrix.
-10. Then resume the queued permanent-Pi/internet Voice checkpoint.
+After v0.3.54 CI passes:
+1. On the older phone running v0.3.53, use **CHECK UPDATE** to install v0.3.54.
+2. Open 🛠 -> **Video rotation lab** during a Video/Baby call.
+3. Confirm the full selectable list appears; the previous message-only dialog is a failure.
+4. Try the four presets:
+   - Production baseline
+   - Android official + TextureView display-only
+   - WebRTC + per-frame metadata
+   - Android + per-frame metadata
+5. Test front camera portrait / landscape-left / landscape-right.
+6. Repeat back camera.
+7. Report which preset/settings keep both remote video and local preview upright.
+8. After a working combination is proven, promote only the smallest proven subset to production.
+9. Then resume the queued permanent-Pi/internet Voice checkpoint.
+
+Validated and no longer blocking:
+- Older-phone updater signature mismatch: **fixed and user-validated**.
+- Sleeping Baby old-phone audio regression: **working again / role-swap guard validated**.
 
 ---
 

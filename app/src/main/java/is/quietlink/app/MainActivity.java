@@ -935,11 +935,12 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 "Reset production defaults"
         };
 
+        // Some older Android AlertDialog implementations do not render a
+        // message and a list reliably at the same time. Keep this dialog
+        // list-first so every rotation control remains visible on those phones.
         new android.app.AlertDialog.Builder(this)
-                .setTitle("Video rotation lab")
-                .setMessage(RotationLabConfig.summary(this)
-                        + "\n\nStored only on this phone. Settings are developer-only and "
-                        + "can be changed during a live Video/Baby call.")
+                .setTitle("Video rotation lab • "
+                        + (RotationLabConfig.enabled(this) ? "TEST" : "PRODUCTION"))
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) showRotationPresetPicker();
                     else if (which == 1) showRotationLabChoice(
