@@ -1,10 +1,10 @@
 # QuietLink AI handoff / continuity guide
 
-Updated: **2026-09-22**  
+Updated: **2026-09-23**  
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.47 / versionCode 59**  
+Current release: **v0.3.48 / versionCode 60**  
 Latest release CI: **passed**
 
 ---
@@ -37,7 +37,7 @@ QuietLink is a native Android peer-to-peer communications app supporting:
 - privacy-safe diagnostic export
 - in-app update checking/install handoff
 
-The project is currently extending from **local-only P2P** into **internet P2P**.
+The project is currently extending the now-permanent production rendezvous into **actual internet P2P session establishment and recovery**.
 
 The user wants online connectivity added incrementally without destabilizing local operation. The Raspberry Pi may now be used **during milestone 7 as test rendezvous infrastructure**. Milestone 8 still means promoting/hardening that Pi deployment for permanent use rather than merely running the test server.
 
@@ -64,7 +64,7 @@ The lobby has a small Online status dot.
 - Green means the published QuietLink online status explicitly says internet peer calling is usable.
 - Red means local-only / online unavailable.
 - Tapping the dot gives a useful explanation.
-- The status document currently keeps `onlineCallsAvailable=false`, so v0.3.45 correctly remains red.
+- The status document currently keeps `onlineCallsAvailable=false`, so the Online dot intentionally remains red even though production rendezvous signaling is now enabled.
 
 The dot should only become green when the actual internet P2P path is ready enough to connect peers.
 
@@ -162,6 +162,30 @@ Internet-path recovery still needs to become transport-independent.
 ---
 
 # 6. Online P2P work completed
+
+## v0.3.48 — Permanent production rendezvous integration
+
+Permanent infrastructure now confirmed:
+- Raspberry Pi rendezvous is running as a systemd service on localhost port 8787.
+- Permanent Cloudflare Tunnel is installed as `cloudflared.service` and starts automatically.
+- Public hostname is `https://rendezvousquietlinkvikman.dpdns.org`.
+- Cloudflare published route forwards that hostname to `http://127.0.0.1:8787`.
+- Public `/health` works.
+- Two-phone developer-mode candidate exchange across separate networks was user-confirmed.
+
+Android production integration:
+- Published `online-status.json` now carries the permanent rendezvous URL while `onlineCallsAvailable` deliberately remains false.
+- CODE host/join starts LAN immediately, waits ~1.5 s, then starts production rendezvous signaling in parallel if still unconnected.
+- Wi-Fi Direct still begins after 8 s.
+- A saved developer override equal to the newly official production URL is automatically cleared/promoted so existing test phones do not stay stuck in TEST mode.
+- Alternate developer override URLs still work.
+- A production rendezvous match with candidates shows `Internet peer found • checking connection paths…`.
+- Rendezvous failure remains non-fatal; local paths continue.
+
+Important truth:
+- Rendezvous candidate exchange is productionized.
+- Current control transport is still TCP and media is UDP.
+- Do not claim direct internet P2P is complete merely from rendezvous matching. The next user test must validate v0.3.48 normal-flow signaling with no developer override, then implementation moves to actual internet session establishment/hole-punch/relay strategy.
 
 ## v0.3.47 — Stable v2 signer cutover
 
@@ -391,15 +415,13 @@ v0.3.38 passed:
 
 `OnlineStatus.Result` now supports a `rendezvousUrl`.
 
-QuietLink only starts the online rendezvous bootstrap when all of these are true:
+QuietLink now starts production rendezvous signaling when:
+1. the online status endpoint is reachable
+2. a non-empty HTTPS `rendezvousUrl` is supplied
+3. the current session has a valid six-digit code
+4. a call is not already established
 
-1. online status endpoint is reachable
-2. `onlineCallsAvailable=true`
-3. a non-empty HTTPS `rendezvousUrl` is supplied
-4. the current session has a valid six-digit code
-5. a call is not already established
-
-The currently published status intentionally leaves online calling disabled, so the new rendezvous client is dormant in normal use.
+`onlineCallsAvailable` remains a separate, stricter UI/production-readiness signal. It can remain false/red while rendezvous candidate exchange runs automatically. This lets signaling be productionized without falsely presenting full internet calling as complete.
 
 When any connection succeeds, rendezvous should be closed to avoid stale presence.
 
@@ -436,7 +458,7 @@ Milestone-7 Pi local verification succeeded on 2026-09-22:
 - `GET http://127.0.0.1:8787/health` returned `service=quietlink-online`, `status=ok`, `phase=rendezvous-bootstrap`, `build=pi-python-test`
 - activeRooms=0 / activePeers=0 before public testing
 
-Next action is to install `cloudflared` using `rendezvous/pi/install-cloudflared.sh`, launch a Quick Tunnel to `http://127.0.0.1:8787`, then verify the public `/health` URL from outside the Pi before wiring Android to it.
+Permanent Cloudflare setup is complete: `cloudflared.service` is active/enabled and the published application route maps `rendezvousquietlinkvikman.dpdns.org` to `http://127.0.0.1:8787`. Public `/health` works.
 
 Security decision: the Pi Python server now binds to **127.0.0.1 only**, not 0.0.0.0. The temporary tunnel URL must **not** be committed to GitHub. The Android test build should receive it through a developer-only local override stored on-device. The production status document remains unchanged/red until internet calling is genuinely ready.
 
@@ -483,44 +505,28 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next milestone: validate STUN, then live two-peer candidate exchange
+## Primary next milestone: validate normal production rendezvous, then implement actual internet session establishment
 
-Continue from v0.3.39.
+v0.3.48 removes the need to configure the permanent rendezvous URL manually.
 
-v0.3.39 implements real STUN public UDP endpoint discovery, feeds the resulting srflx candidate into `RendezvousClient`, and exposes a user-visible **RUN ONLINE PATH TEST** action from the lobby Online status dialog.
+Immediate user test:
+1. Upgrade both phones to v0.3.48.
+2. Do not configure a developer rendezvous override. Existing saved override equal to the official URL should auto-clear.
+3. Phone A on Wi-Fi, Phone B on mobile data.
+4. Use the same six-digit CODE, one HOST and one JOIN.
+5. Confirm the waiting UI reaches **Internet peer found • checking connection paths…**.
+6. Confirm local same-LAN CODE sessions still connect normally and do not depend on Pi/Cloudflare.
 
-The immediate next actions are:
-
-1. Wi-Fi test is complete and passed strongly: Candidate discovered YES / Second STUN confirmation YES / Mapping stable YES.
-2. Have the user run the same Online Path Test on mobile data and record the result.
-3. Set up the Raspberry Pi test rendezvous using `rendezvous/PI_SETUP.md` and `rendezvous/pi/install.sh`.
-4. Expose it temporarily over HTTPS for milestone-7 testing and obtain the HTTPS test URL.
-5. Add/use a test rendezvous override in Android so the Pi URL can be tested without falsely turning the production status dot green.
-6. Verify two phones with the same code exchange candidates across separate networks.
-7. Only then implement direct internet dialing/acceptance.
-8. Keep local discovery running in parallel and preferred.
-9. Do not set production `onlineCallsAvailable=true` until an actual encrypted internet call succeeds.
-
-### Candidate format already anticipated by the standalone server
-
-Candidate entries currently allow fields such as:
-
-- `kind`
-- `host`
-- `tcpPort`
-- `udpPort`
-
-This format may be refined if the implementation proves it is insufficient. Keep it bounded and version-compatible.
-
-### Decision point after candidate discovery
-
-After STUN testing, choose the smallest reliable next path:
-
-- direct TCP + UDP where NAT permits, with fallback later; or
-- introduce a transport abstraction / encrypted UDP control path; or
-- relay encrypted control while keeping media direct where possible
-
-Base that decision on actual connectivity tests, not assumptions.
+After that validation:
+1. Implement actual internet session establishment rather than candidate exchange only.
+2. Preserve QL5 authentication and encryption.
+3. Keep LAN/Hotspot first and Wi-Fi Direct fallback working.
+4. Because control currently uses TCP while STUN discovers UDP mappings, choose/test the smallest reliable strategy:
+   - authenticated encrypted UDP control transport for internet sessions; or
+   - opaque encrypted relay for control with direct UDP media when possible; or
+   - another bounded transport abstraction that does not weaken QL5.
+5. Add internet-path reconnect/self-healing and network-transition recovery.
+6. Only set `onlineCallsAvailable=true` after a real normal-flow cross-network encrypted session is confirmed.
 
 ---
 
