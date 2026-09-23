@@ -11,10 +11,16 @@ PORT = int(os.environ.get("PORT", "8787"))
 BIND_HOST = os.environ.get("BIND_HOST", "127.0.0.1")
 TTL_SECONDS = 45
 MAX_BODY = 8 * 1024
+MAX_RELAY_BODY = 32 * 1024
+MAX_RELAY_DATA_CHARS = 28 * 1024
+MAX_RELAY_QUEUE_MESSAGES = 64
+MAX_RELAY_QUEUE_CHARS = 256 * 1024
+RELAY_WAIT_SECONDS = 4.0
 MAX_ROOMS = 1000
 BUILD = os.environ.get("QUIETLINK_RENDEZVOUS_BUILD", "pi-python")
 ENABLE_DEV_ENDPOINT = os.environ.get("QUIETLINK_DEV_ENDPOINT", "").lower() in ("1", "true", "yes")
-TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+TOKEN_RE = re.compile(r"^[A-Za-z0-9_=-]+$")
+RELAY_DATA_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 rooms = {}
 rate = {}
@@ -24,10 +30,14 @@ counters = {
     "register": 0,
     "poll": 0,
     "leave": 0,
+    "relaySend": 0,
+    "relayPoll": 0,
+    "relayAck": 0,
     "rejected": 0,
     "expired": 0,
 }
 lock = threading.RLock()
+relay_condition = threading.Condition(lock)
 
 
 def safe_log(event):
@@ -44,6 +54,14 @@ def valid_token(value, maximum=128):
         isinstance(value, str)
         and 16 <= len(value) <= maximum
         and TOKEN_RE.fullmatch(value) is not None
+    )
+
+
+def valid_relay_data(value):
+    return (
+        isinstance(value, str)
+        and 1 <= len(value) <= MAX_RELAY_DATA_CHARS
+        and RELAY_DATA_RE.fullmatch(value) is not None
     )
 
 
@@ -76,40 +94,68 @@ def clean_candidates(value):
     return out
 
 
-def allow(peer):
+def allow(peer, limit=30, bucket="base"):
     now = time.monotonic()
+    key = bucket + ":" + peer
     with lock:
-        current = rate.get(peer)
+        current = rate.get(key)
         if current is None or now - current["window"] > 10:
             current = {"window": now, "count": 0}
         current["count"] += 1
-        rate[peer] = current
-        return current["count"] <= 30
+        rate[key] = current
+        return current["count"] <= limit
+
+
+def cleanup_locked(now=None):
+    if now is None:
+        now = time.monotonic()
+    empty_rooms = []
+    changed = False
+    for room, peers in list(rooms.items()):
+        expired = [
+            peer for peer, entry in peers.items()
+            if entry["expiresAt"] <= now
+        ]
+        for peer in expired:
+            del peers[peer]
+            counters["expired"] += 1
+            changed = True
+        if not peers:
+            empty_rooms.append(room)
+    for room in empty_rooms:
+        rooms.pop(room, None)
+        changed = True
+    if len(rate) > 10000:
+        rate.clear()
+    if changed:
+        relay_condition.notify_all()
 
 
 def cleanup():
-    now = time.monotonic()
-    with lock:
-        empty_rooms = []
-        for room, peers in list(rooms.items()):
-            expired = [
-                peer for peer, entry in peers.items()
-                if entry["expiresAt"] <= now
-            ]
-            for peer in expired:
-                del peers[peer]
-                counters["expired"] += 1
-            if not peers:
-                empty_rooms.append(room)
-        for room in empty_rooms:
-            rooms.pop(room, None)
-        if len(rate) > 10000:
-            rate.clear()
+    with relay_condition:
+        cleanup_locked()
 
 
 def active_peer_count():
     with lock:
         return sum(len(peers) for peers in rooms.values())
+
+
+def relay_queue_for(entry):
+    queue = entry.get("relayQueue")
+    if queue is None:
+        queue = []
+        entry["relayQueue"] = queue
+    entry.setdefault("relayChars", 0)
+    entry.setdefault("relayAck", {})
+    return queue
+
+
+def first_relay_message(entry, sender):
+    for item in relay_queue_for(entry):
+        if item["from"] == sender:
+            return item
+    return None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -146,13 +192,13 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def read_json(self):
+    def read_json(self, maximum=MAX_BODY):
         raw_length = self.headers.get("Content-Length")
         try:
             length = int(raw_length or "0")
         except ValueError:
             raise ValueError("invalid_length")
-        if length <= 0 or length > MAX_BODY:
+        if length <= 0 or length > maximum:
             raise ValueError("invalid_length")
         raw = self.rfile.read(length)
         return json.loads(raw.decode("utf-8"))
@@ -165,7 +211,7 @@ class Handler(BaseHTTPRequestHandler):
                     "service": "quietlink-online",
                     "status": "ok",
                     "onlineCallsAvailable": False,
-                    "phase": "rendezvous-bootstrap",
+                    "phase": "control-relay-test",
                     "build": BUILD,
                     "activeRooms": len(rooms),
                     "activePeers": active_peer_count(),
@@ -178,7 +224,8 @@ class Handler(BaseHTTPRequestHandler):
                 "<!doctype html><meta charset=utf-8>"
                 "<title>QuietLink rendezvous</title>"
                 "<h1>QuietLink rendezvous service</h1>"
-                "<p>This service only helps peers find each other. "
+                "<p>This service helps peers find each other and can forward opaque "
+                "QuietLink control bytes. Media and session keys are not terminated here. "
                 "Local QuietLink calling does not depend on it.</p>",
             )
 
@@ -188,7 +235,7 @@ class Handler(BaseHTTPRequestHandler):
             with lock:
                 payload = {
                     "service": "quietlink-online",
-                    "phase": "rendezvous-bootstrap",
+                    "phase": "control-relay-test",
                     "build": BUILD,
                     "activeRooms": len(rooms),
                     "activePeers": active_peer_count(),
@@ -200,7 +247,11 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_json(404, {"ok": False, "error": "not_found"})
 
     def do_POST(self):
-        if self.path not in ("/v1/register", "/v1/poll", "/v1/leave"):
+        allowed_paths = (
+            "/v1/register", "/v1/poll", "/v1/leave",
+            "/v1/relay-send", "/v1/relay-poll", "/v1/relay-ack",
+        )
+        if self.path not in allowed_paths:
             return self.send_json(404, {"ok": False, "error": "not_found"})
 
         with lock:
@@ -213,7 +264,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(415, {"ok": False, "error": "content_type"})
 
         try:
-            body = self.read_json()
+            body = self.read_json(MAX_RELAY_BODY if self.path == "/v1/relay-send" else MAX_BODY)
         except Exception:
             with lock:
                 counters["rejected"] += 1
@@ -221,7 +272,12 @@ class Handler(BaseHTTPRequestHandler):
 
         room = body.get("room")
         peer = body.get("peer")
-        if not valid_token(room, 256) or not valid_token(peer, 128) or not allow(peer):
+        relay_request = self.path.startswith("/v1/relay-")
+        if (
+            not valid_token(room, 256)
+            or not valid_token(peer, 128)
+            or not allow(peer, 100 if relay_request else 30, "relay" if relay_request else "base")
+        ):
             with lock:
                 counters["rejected"] += 1
             return self.send_json(400, {"ok": False, "error": "invalid_request"})
@@ -241,32 +297,31 @@ class Handler(BaseHTTPRequestHandler):
             ):
                 with lock:
                     counters["rejected"] += 1
-                return self.send_json(
-                    400, {"ok": False, "error": "invalid_registration"}
-                )
+                return self.send_json(400, {"ok": False, "error": "invalid_registration"})
 
-            with lock:
+            with relay_condition:
                 peers = rooms.get(room)
                 if peers is None:
                     if len(rooms) >= MAX_ROOMS:
                         counters["rejected"] += 1
-                        return self.send_json(
-                            503, {"ok": False, "error": "capacity"}
-                        )
+                        return self.send_json(503, {"ok": False, "error": "capacity"})
                     peers = {}
                     rooms[room] = peers
 
+                existing = peers.get(peer) or {}
                 peers[peer] = {
                     "role": role,
                     "protocol": protocol,
                     "candidates": candidates,
                     "expiresAt": time.monotonic() + TTL_SECONDS,
+                    "relayQueue": existing.get("relayQueue", []),
+                    "relayChars": existing.get("relayChars", 0),
+                    "relayAck": existing.get("relayAck", {}),
                 }
                 counters["register"] += 1
+                relay_condition.notify_all()
 
-            return self.send_json(
-                200, {"ok": True, "expiresInSeconds": TTL_SECONDS}
-            )
+            return self.send_json(200, {"ok": True, "expiresInSeconds": TTL_SECONDS})
 
         if self.path == "/v1/poll":
             with lock:
@@ -297,13 +352,145 @@ class Handler(BaseHTTPRequestHandler):
                 }
             return self.send_json(200, payload)
 
-        with lock:
+        if self.path == "/v1/relay-send":
+            target = body.get("to")
+            seq = body.get("seq")
+            data = body.get("data")
+            if (
+                not valid_token(target, 128)
+                or not isinstance(seq, int)
+                or isinstance(seq, bool)
+                or seq <= 0
+                or seq > 2**63 - 1
+                or not valid_relay_data(data)
+            ):
+                with lock:
+                    counters["rejected"] += 1
+                return self.send_json(400, {"ok": False, "error": "invalid_relay"})
+
+            with relay_condition:
+                peers = rooms.get(room)
+                sender = peers.get(peer) if peers else None
+                recipient = peers.get(target) if peers else None
+                if sender is None or recipient is None or sender["role"] == recipient["role"]:
+                    counters["rejected"] += 1
+                    return self.send_json(409, {"ok": False, "error": "relay_unavailable"})
+
+                queue = relay_queue_for(recipient)
+                acked = int(recipient["relayAck"].get(peer, 0))
+                if seq <= acked:
+                    counters["relaySend"] += 1
+                    return self.send_json(200, {"ok": True, "duplicate": True})
+
+                existing = next((item for item in queue if item["from"] == peer and item["seq"] == seq), None)
+                if existing is not None:
+                    if existing["data"] != data:
+                        counters["rejected"] += 1
+                        return self.send_json(409, {"ok": False, "error": "relay_sequence_conflict"})
+                    counters["relaySend"] += 1
+                    return self.send_json(200, {"ok": True, "duplicate": True})
+
+                highest = acked
+                for item in queue:
+                    if item["from"] == peer and item["seq"] > highest:
+                        highest = item["seq"]
+                if seq != highest + 1:
+                    counters["rejected"] += 1
+                    return self.send_json(409, {"ok": False, "error": "relay_sequence_gap"})
+
+                if len(queue) >= MAX_RELAY_QUEUE_MESSAGES or recipient["relayChars"] + len(data) > MAX_RELAY_QUEUE_CHARS:
+                    counters["rejected"] += 1
+                    return self.send_json(429, {"ok": False, "error": "relay_backlog"})
+
+                queue.append({"from": peer, "seq": seq, "data": data})
+                recipient["relayChars"] += len(data)
+                counters["relaySend"] += 1
+                relay_condition.notify_all()
+            return self.send_json(200, {"ok": True})
+
+        if self.path == "/v1/relay-poll":
+            sender = body.get("from")
+            if not valid_token(sender, 128):
+                with lock:
+                    counters["rejected"] += 1
+                return self.send_json(400, {"ok": False, "error": "invalid_relay"})
+
+            deadline = time.monotonic() + RELAY_WAIT_SECONDS
+            with relay_condition:
+                counters["relayPoll"] += 1
+                while True:
+                    cleanup_locked()
+                    peers = rooms.get(room)
+                    me = peers.get(peer) if peers else None
+                    remote = peers.get(sender) if peers else None
+                    if me is None:
+                        return self.send_json(409, {"ok": False, "error": "relay_unavailable"})
+                    if remote is None or me["role"] == remote["role"]:
+                        return self.send_json(200, {"ok": True, "peerPresent": False})
+                    message = first_relay_message(me, sender)
+                    if message is not None:
+                        return self.send_json(200, {
+                            "ok": True,
+                            "peerPresent": True,
+                            "seq": message["seq"],
+                            "data": message["data"],
+                        })
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return self.send_json(200, {"ok": True, "peerPresent": True, "data": ""})
+                    relay_condition.wait(timeout=remaining)
+
+        if self.path == "/v1/relay-ack":
+            sender = body.get("from")
+            seq = body.get("seq")
+            if (
+                not valid_token(sender, 128)
+                or not isinstance(seq, int)
+                or isinstance(seq, bool)
+                or seq <= 0
+                or seq > 2**63 - 1
+            ):
+                with lock:
+                    counters["rejected"] += 1
+                return self.send_json(400, {"ok": False, "error": "invalid_relay"})
+
+            with relay_condition:
+                peers = rooms.get(room)
+                me = peers.get(peer) if peers else None
+                remote = peers.get(sender) if peers else None
+                if me is None or remote is None or me["role"] == remote["role"]:
+                    counters["rejected"] += 1
+                    return self.send_json(409, {"ok": False, "error": "relay_unavailable"})
+
+                queue = relay_queue_for(me)
+                acked = int(me["relayAck"].get(sender, 0))
+                if seq <= acked:
+                    counters["relayAck"] += 1
+                    return self.send_json(200, {"ok": True, "duplicate": True})
+                if seq != acked + 1:
+                    counters["rejected"] += 1
+                    return self.send_json(409, {"ok": False, "error": "relay_ack_gap"})
+
+                index = next((i for i, item in enumerate(queue)
+                              if item["from"] == sender and item["seq"] == seq), None)
+                if index is None:
+                    counters["rejected"] += 1
+                    return self.send_json(409, {"ok": False, "error": "relay_message_missing"})
+                item = queue.pop(index)
+                me["relayChars"] = max(0, me["relayChars"] - len(item["data"]))
+                me["relayAck"][sender] = seq
+                counters["relayAck"] += 1
+                relay_condition.notify_all()
+            return self.send_json(200, {"ok": True})
+
+        with relay_condition:
             counters["leave"] += 1
             peers = rooms.get(room)
             if peers:
                 peers.pop(peer, None)
                 if not peers:
                     rooms.pop(room, None)
+            relay_condition.notify_all()
         return self.send_json(200, {"ok": True})
 
 

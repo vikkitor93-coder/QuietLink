@@ -4,8 +4,8 @@ Updated: **2026-09-23**
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.48 / versionCode 60**  
-Latest release CI: **passed**
+Current release: **v0.3.49 / versionCode 61**  
+Latest release CI: **pending v0.3.49 validation**
 
 ---
 
@@ -163,6 +163,38 @@ Internet-path recovery still needs to become transport-independent.
 
 # 6. Online P2P work completed
 
+
+## v0.3.49 — Internet session checkpoint: opaque QL5 control relay + direct UDP media
+
+User validation before implementation:
+- v0.3.48 normal production CODE flow was confirmed working across Wi-Fi ↔ mobile data with no developer override.
+- The waiting UI reached the production rendezvous peer-match stage, so candidate exchange is no longer the blocker.
+
+Implemented:
+- Production rendezvous now supports a bounded **opaque reliable control relay**. It forwards raw QL5 handshake bytes and encrypted QL5 control/chat frames but never terminates QuietLink encryption and never receives session keys or media.
+- Relay chunks use per-direction sequence numbers, ACK, idempotent retry/deduplication, strict body/chunk bounds, queue count/byte caps, and short-lived room registrations.
+- Android adds `RendezvousRelaySocket`, a Socket-shaped reliable byte stream so the existing `CryptoChannel.handshake(...)` and QL5 framing remain unchanged.
+- After a production peer match, CODE host/join attempts the existing QL5 handshake over that relay instead of exposing the current TCP listener through NAT.
+- Audio/video remain on the existing end-to-end encrypted UDP `MediaTransport` and target the peer's exchanged STUN server-reflexive candidate.
+- Both peers send three anonymous content-free `QLP1` UDP warm-up datagrams after QL5 authentication and before encrypted media starts. They carry no identity, room token, pairing code, media, or key material.
+- LAN/Hotspot remains immediate, production rendezvous still waits ~1.5 s, and Wi-Fi Direct still begins after 8 s.
+- Alternate developer rendezvous overrides remain candidate-test behavior and do not automatically start the production relay.
+- Failure of the internet relay path is non-fatal; local search continues.
+- The Online dot remains red until real-device validation succeeds.
+
+Local validation before publication:
+- Node rendezvous syntax passed.
+- Pi Python syntax passed.
+- Pi relay smoke test passed, including duplicate-send/ACK behavior.
+- Core QL5 crypto smoke tests passed unchanged.
+
+Still pending:
+- Deploy the updated Python rendezvous server to the permanent Raspberry Pi.
+- Install v0.3.49 on both phones and validate a real encrypted Voice call across Wi-Fi ↔ mobile data, including matching verification phrase, bidirectional audio, and chat.
+- Internet-path self-healing/network-transition recovery.
+- Opaque encrypted media relay fallback for networks where direct UDP fails.
+
+
 ## v0.3.48 — Permanent production rendezvous integration
 
 Permanent infrastructure now confirmed:
@@ -185,7 +217,7 @@ Android production integration:
 Important truth:
 - Rendezvous candidate exchange is productionized.
 - Current control transport is still TCP and media is UDP.
-- Do not claim direct internet P2P is complete merely from rendezvous matching. The next user test must validate v0.3.48 normal-flow signaling with no developer override, then implementation moves to actual internet session establishment/hole-punch/relay strategy.
+- Do not claim direct internet P2P was complete merely from rendezvous matching. The v0.3.48 normal-flow signaling test was later user-confirmed across Wi-Fi ↔ mobile data, unlocking the v0.3.49 internet-session implementation.
 
 ## v0.3.47 — Stable v2 signer cutover
 
@@ -505,28 +537,26 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next milestone: validate normal production rendezvous, then implement actual internet session establishment
+## Primary next checkpoint: deploy v0.3.49 relay server and validate the first real encrypted internet Voice session
 
-v0.3.48 removes the need to configure the permanent rendezvous URL manually.
+The v0.3.48 production rendezvous flow was user-confirmed. v0.3.49 now implements the first actual cross-network session path while preserving QL5 and local-first ordering.
 
-Immediate user test:
-1. Upgrade both phones to v0.3.48.
-2. Do not configure a developer rendezvous override. Existing saved override equal to the official URL should auto-clear.
-3. Phone A on Wi-Fi, Phone B on mobile data.
-4. Use the same six-digit CODE, one HOST and one JOIN.
-5. Confirm the waiting UI reaches **Internet peer found • checking connection paths…**.
-6. Confirm local same-LAN CODE sessions still connect normally and do not depend on Pi/Cloudflare.
+Immediate human step after v0.3.49 CI passes:
+1. On the permanent Raspberry Pi: `cd ~/QuietLink && git pull --ff-only`.
+2. Reinstall/restart from current source: `sudo bash rendezvous/pi/install.sh`.
+3. Verify local and public `/health` report `phase=control-relay-test` and build `pi-python-control-relay`.
+4. Install v0.3.49 on both phones.
+5. Phone A on Wi-Fi, Phone B on mobile data; do not configure a developer rendezvous override.
+6. Use the same six-digit CODE, one HOST and one JOIN, in Voice mode.
+7. Confirm both reach **Connected • Voice • Online** and show the same QL5 verification phrase.
+8. Confirm bidirectional audio and chat.
+9. If it fails, export the existing privacy-safe log; do not expose endpoint values manually.
+10. Return both phones to one LAN and confirm local CODE still connects normally.
 
-After that validation:
-1. Implement actual internet session establishment rather than candidate exchange only.
-2. Preserve QL5 authentication and encryption.
-3. Keep LAN/Hotspot first and Wi-Fi Direct fallback working.
-4. Because control currently uses TCP while STUN discovers UDP mappings, choose/test the smallest reliable strategy:
-   - authenticated encrypted UDP control transport for internet sessions; or
-   - opaque encrypted relay for control with direct UDP media when possible; or
-   - another bounded transport abstraction that does not weaken QL5.
-5. Add internet-path reconnect/self-healing and network-transition recovery.
-6. Only set `onlineCallsAvailable=true` after a real normal-flow cross-network encrypted session is confirmed.
+Interpretation:
+- If QL5/control connects but audio RX stays zero, direct UDP NAT traversal failed on that network pair; the next implementation checkpoint is opaque encrypted media relay fallback.
+- If audio/chat pass, mark direct internet session establishment validated, then implement internet-path self-healing/network-transition recovery followed by media-relay fallback.
+- Keep `onlineCallsAvailable=false` until the real cross-network path is reliable enough to advertise as usable.
 
 ---
 

@@ -214,3 +214,16 @@
 172. Production rendezvous outage regression: stop/unplug the Pi or Cloudflare tunnel, then put both phones on the same LAN and verify CODE calling still succeeds locally despite rendezvous failure.
 173. Developer override preservation: save a different valid HTTPS developer rendezvous URL and confirm v0.3.48 still uses that override in TEST mode instead of silently replacing it with production.
 174. Production rendezvous privacy: export diagnostics after test 170 and verify no public IP, mapped port, raw six-digit code, room token, peer token, candidate payload, or production endpoint hostname is exposed.
+
+175. v0.3.48 production rendezvous confirmation: with Phone A on Wi-Fi and Phone B on mobile data, no developer override, same CODE host/join must reach **Internet peer found • checking connection paths…**. This was user-confirmed before v0.3.49 implementation.
+176. Pi relay reliability smoke: CI must verify relay send, duplicate-send idempotence, non-consuming poll, ACK, duplicate ACK, and late duplicate retry after ACK.
+177. Pi relay deployment: after updating the permanent Pi, local and public /health must report phase **control-relay-test** and build **pi-python-control-relay**.
+178. v0.3.49 internet Voice: Phone A on Wi-Fi and Phone B on mobile data, no developer override, same CODE host/join. Both phones should reach **Connected • Voice • Online**.
+179. QL5 internet authentication: both phones must show the same verification phrase. A wrong six-digit code must still fail authentication.
+180. Direct UDP audio: speak both ways and verify bidirectional audio. Diagnostics may show TX/RX counters but must not expose candidate addresses or ports.
+181. Relayed encrypted control/chat: send chat both ways and toggle microphone state; control operations must remain responsive while the QL5 stream uses the opaque relay.
+182. Internet interruption checkpoint: interrupt the online path after connection. v0.3.49 is not expected to provide internet self-healing yet; it must fail safely without weakening authentication.
+183. Local-first regression: with both phones on the same LAN, CODE must still connect locally whether the Pi/control relay is healthy or unavailable.
+184. Internet privacy regression: exported diagnostics must contain no public IP, mapped port, raw code, room/peer token, candidate payload, relay payload, session key, chat text, audio, or video content.
+185. UDP fallback decision: if both phones reach **Connected • Voice • Online** but audio RX remains zero, record the privacy-safe diagnostics. That indicates the direct UDP NAT path failed and the next checkpoint is opaque encrypted media relay fallback.
+

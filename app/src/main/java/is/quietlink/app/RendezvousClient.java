@@ -9,6 +9,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -77,6 +78,15 @@ public final class RendezvousClient implements AutoCloseable {
         if (!running.compareAndSet(false, true)) return;
         worker = new Thread(this::runLoop, "QuietLink-Rendezvous");
         worker.start();
+    }
+
+    RendezvousRelaySocket openRelaySocket(Match match, InetAddress peerAddress) throws Exception {
+        if (!running.get()) throw new IllegalStateException("Rendezvous is not running");
+        if (match == null || match.peerToken == null || match.peerToken.isEmpty()) {
+            throw new IllegalArgumentException("Missing matched peer");
+        }
+        return new RendezvousRelaySocket(
+                baseUrl, roomToken, peerToken, match.peerToken, peerAddress);
     }
 
     private void runLoop() {

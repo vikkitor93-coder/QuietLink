@@ -198,10 +198,10 @@ jobs:
               "status": "ok",
               "onlineCallsAvailable": False,
               "rendezvousUrl": "https://rendezvousquietlinkvikman.dpdns.org",
-              "phase": "production-rendezvous",
+              "phase": "control-relay-validation",
               "message": (
-                  "QuietLink internet rendezvous is online. Local connections remain "
-                  "preferred while the normal cross-network call path is being validated."
+                  "QuietLink internet rendezvous/control relay is online. Local connections remain "
+                  "preferred while the encrypted cross-network call path is being validated."
               )
           }
           with open("update-site/online-status.json", "w", encoding="utf-8") as f:

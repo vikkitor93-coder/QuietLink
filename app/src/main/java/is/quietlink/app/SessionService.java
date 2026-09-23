@@ -91,6 +91,7 @@ public final class SessionService extends Service {
     private final AtomicBoolean connecting = new AtomicBoolean(false);
     private final AtomicBoolean stopped = new AtomicBoolean(false);
     private final AtomicBoolean established = new AtomicBoolean(false);
+    private final AtomicBoolean onlineConnecting = new AtomicBoolean(false);
     private final Semaphore incomingHandshakeSlots = new Semaphore(4, true);
 
     private ServerSocket serverSocket;
@@ -107,6 +108,7 @@ public final class SessionService extends Service {
     private PeerDiscovery peerDiscovery;
     private PeerDiscovery recoveryDiscovery;
     private RendezvousClient onlineRendezvous;
+    private volatile boolean internetControlRelay = false;
     private ServerSocket recoveryServerSocket;
     // Lightweight beacon stays advertised during a healthy call. If one phone
     // notices a break first, its recovery request makes the still-connected
@@ -214,6 +216,8 @@ public final class SessionService extends Service {
             stopped.set(false);
             established.set(false);
             connecting.set(false);
+            onlineConnecting.set(false);
+            internetControlRelay = false;
             recoveryCount = 0;
             lastDiagRttMs = -1L;
             host = ACTION_HOST.equals(action);
@@ -850,6 +854,7 @@ public final class SessionService extends Service {
                                     } else if (count > 0) {
                                         SessionBus.status(
                                                 "Internet peer found • checking connection paths…");
+                                        startInternetRelaySession(match);
                                     }
                                 }
                             }
@@ -915,6 +920,73 @@ public final class SessionService extends Service {
         try { if (onlineRendezvous != null) onlineRendezvous.close(); }
         catch (Exception ignored) {}
         onlineRendezvous = null;
+        onlineConnecting.set(false);
+    }
+
+    private void startInternetRelaySession(RendezvousClient.Match match) {
+        if (match == null || stopped.get() || established.get()) return;
+        if (match.protocolVersion != CryptoChannel.PROTOCOL_VERSION) {
+            SessionBus.status("Internet peer uses a different QuietLink security version");
+            QuietLog.log("ONLINE", "internet_protocol_mismatch",
+                    "protocol=" + match.protocolVersion);
+            return;
+        }
+        if (!onlineConnecting.compareAndSet(false, true)) return;
+
+        io.execute(() -> {
+            RendezvousRelaySocket relaySocket = null;
+            try {
+                InetSocketAddress mediaEndpoint = selectOnlineMediaCandidate(match.candidates);
+                if (mediaEndpoint == null || mediaEndpoint.getAddress() == null) {
+                    throw new IOException("No usable internet media candidate");
+                }
+
+                RendezvousClient rendezvous;
+                synchronized (SessionService.this) {
+                    rendezvous = onlineRendezvous;
+                }
+                if (rendezvous == null || stopped.get() || established.get()) return;
+
+                SessionBus.status("Internet peer found • establishing secure session…");
+                relaySocket = rendezvous.openRelaySocket(match, mediaEndpoint.getAddress());
+                QuietLog.log("ONLINE", "internet_control_relay", "state=starting");
+                establishCodeSession(
+                        relaySocket,
+                        mediaEndpoint.getAddress(),
+                        mediaEndpoint.getPort(),
+                        true);
+            } catch (Exception e) {
+                try { if (relaySocket != null) relaySocket.close(); } catch (Exception ignored) {}
+                QuietLog.log("ONLINE", "internet_session_failed",
+                        "reason=" + e.getClass().getSimpleName());
+                if (!stopped.get() && !established.get()) {
+                    SessionBus.status("Internet path not connected • local search continues");
+                }
+            } finally {
+                if (!established.get()) {
+                    onlineConnecting.set(false);
+                }
+            }
+        });
+    }
+
+    private InetSocketAddress selectOnlineMediaCandidate(org.json.JSONArray candidates) {
+        if (candidates == null) return null;
+        for (int i = 0; i < candidates.length(); i++) {
+            try {
+                org.json.JSONObject candidate = candidates.optJSONObject(i);
+                if (candidate == null) continue;
+                if (!"srflx".equals(candidate.optString("kind", ""))) continue;
+                String candidateHost = candidate.optString("host", "").trim();
+                int candidatePort = candidate.optInt("udpPort", 0);
+                if (candidateHost.isEmpty() || candidateHost.length() > 128
+                        || candidatePort < 1 || candidatePort > 65535) continue;
+                InetAddress address = InetAddress.getByName(candidateHost);
+                if (address.isAnyLocalAddress() || address.isMulticastAddress()) continue;
+                return new InetSocketAddress(address, candidatePort);
+            } catch (Exception ignored) {}
+        }
+        return null;
     }
 
     private void startJoin() {
@@ -958,12 +1030,17 @@ public final class SessionService extends Service {
     }
 
     private synchronized void establishCodeSession(Socket socket) throws Exception {
+        establishCodeSession(socket, null, 0, false);
+    }
+
+    private synchronized void establishCodeSession(
+            Socket socket, InetAddress mediaAddress, int mediaPort, boolean internetRelay) throws Exception {
         if (established.get() || stopped.get()) {
             socket.close();
             return;
         }
 
-        SessionBus.status("Connecting…");
+        SessionBus.status(internetRelay ? "Establishing encrypted internet session…" : "Connecting…");
         CryptoChannel newCrypto = CryptoChannel.handshake(socket, host, code, udpSocket.getLocalPort());
 
         if (host) {
@@ -986,7 +1063,14 @@ public final class SessionService extends Service {
         }
 
         crypto = newCrypto;
-        activateConnectedSession(socket);
+        if (internetRelay) {
+            if (mediaAddress == null || mediaPort < 1 || mediaPort > 65535) {
+                throw new IOException("Invalid internet media endpoint");
+            }
+            activateConnectedSession(socket, mediaAddress, mediaPort, true);
+        } else {
+            activateConnectedSession(socket);
+        }
     }
 
     private void exchangeCodeIdentity(CryptoChannel channel, Socket socket) throws Exception {
@@ -1038,6 +1122,11 @@ public final class SessionService extends Service {
     }
 
     private synchronized void activateConnectedSession(Socket socket) throws Exception {
+        activateConnectedSession(socket, socket.getInetAddress(), crypto.getPeerUdpPort(), false);
+    }
+
+    private synchronized void activateConnectedSession(
+            Socket socket, InetAddress mediaAddress, int mediaPort, boolean internetRelay) throws Exception {
         boolean resumed = recovering || restoringFromCheckpoint;
         if (!resumed) {
             resumeAuthorizedForSession = localAutoResumePreference();
@@ -1047,7 +1136,17 @@ public final class SessionService extends Service {
         socket.setSoTimeout((int) PEER_TIMEOUT_MS);
         established.set(true);
         connecting.set(false);
-        stopOnlineRendezvous();
+        internetControlRelay = internetRelay;
+        if (!internetRelay) {
+            stopOnlineRendezvous();
+        } else {
+            onlineConnecting.set(true);
+            QuietLog.log("ONLINE", "internet_control_relay", "state=connected");
+            try {
+                if (serverSocket != null) serverSocket.close();
+            } catch (Exception ignored) {}
+            serverSocket = null;
+        }
         lastPeerSeenElapsedMs = SystemClock.elapsedRealtime();
         peerStaleWarningShown = false;
         if (lan != null) {
@@ -1061,7 +1160,13 @@ public final class SessionService extends Service {
             if (sleepingBaby && !babyStation) remoteVideoEnabled = false;
         }
 
-        media = new MediaTransport(udpSocket, crypto, socket.getInetAddress(), crypto.getPeerUdpPort(), (type, payload) -> {
+        if (mediaAddress == null || mediaPort < 1 || mediaPort > 65535) {
+            throw new IOException("Invalid media endpoint");
+        }
+        if (internetRelay) {
+            primeInternetUdpPath(mediaAddress, mediaPort);
+        }
+        media = new MediaTransport(udpSocket, crypto, mediaAddress, mediaPort, (type, payload) -> {
             if (type == MediaTransport.TYPE_AUDIO && audio != null) audio.onRemoteAudio(payload);
             else if (type == MediaTransport.TYPE_VIDEO && video != null) video.onRemoteChunk(payload);
         });
@@ -1139,6 +1244,26 @@ public final class SessionService extends Service {
                 sendControl("BABY_AUX_STATE_REQUEST");
             }
         }
+    }
+
+    private void primeInternetUdpPath(InetAddress address, int port) {
+        if (udpSocket == null || udpSocket.isClosed() || address == null || port < 1 || port > 65535) return;
+        // Anonymous, content-free UDP probes create the NAT pinhole in both
+        // directions before encrypted media begins. They carry no identity,
+        // room token, pairing code, media, or session key material.
+        byte[] probe = new byte[] { 0x51, 0x4c, 0x50, 0x31 }; // QLP1
+        int sent = 0;
+        for (int i = 0; i < 3; i++) {
+            try {
+                udpSocket.send(new DatagramPacket(probe, probe.length, address, port));
+                sent++;
+                if (i < 2) Thread.sleep(35L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception ignored) {}
+        }
+        QuietLog.log("ONLINE", "udp_path_warmup", "sent=" + sent);
     }
 
     private boolean canTransmitAudio() {
@@ -1385,6 +1510,12 @@ public final class SessionService extends Service {
         recoveryLocalVideoEnabled = localVideoEnabled;
         recoveryRemoteVideoEnabled = remoteVideoEnabled;
         recoveryListening = listening;
+
+        if (internetControlRelay) {
+            QuietLog.log("ONLINE", "internet_control_relay", "state=lost");
+            stopOnlineRendezvous();
+            internetControlRelay = false;
+        }
 
         try { if (audio != null) audio.close(); } catch (Exception ignored) {}
         try { if (video != null) video.close(); } catch (Exception ignored) {}
@@ -1943,6 +2074,8 @@ public final class SessionService extends Service {
         try { if (wifiDirect != null) wifiDirect.close(); } catch (Exception ignored) {}
         try { if (peerDiscovery != null) peerDiscovery.close(); } catch (Exception ignored) {}
         try { if (pairingServerSocket != null) pairingServerSocket.close(); } catch (Exception ignored) {}
+        stopOnlineRendezvous();
+        internetControlRelay = false;
         stopRecoveryResources(true);
         stopRecoveryBeacon();
         releaseReliabilityLocks();
@@ -2119,7 +2252,7 @@ public final class SessionService extends Service {
                     ? (babyStation ? "Baby station" : "Parent station • sleeping monitor")
                     : (babyStation ? "Baby station" : "Parent station"))
                 : (mode == MODE_VIDEO ? "Video" : "Voice");
-        return "Connected • " + kind;
+        return "Connected • " + kind + (internetControlRelay ? " • Online" : "");
     }
 
     private synchronized void setBabyStation(boolean makeBabyStation, boolean tellPeer) {
@@ -2419,6 +2552,9 @@ public final class SessionService extends Service {
         try { if (wifiDirect != null) wifiDirect.close(); } catch (Exception ignored) {}
         try { if (peerDiscovery != null) peerDiscovery.close(); } catch (Exception ignored) {}
         try { if (pairingServerSocket != null) pairingServerSocket.close(); } catch (Exception ignored) {}
+        stopOnlineRendezvous();
+        internetControlRelay = false;
+        onlineConnecting.set(false);
         stopRecoveryResources(true);
         releaseReliabilityLocks();
         clearPendingNearby(true);

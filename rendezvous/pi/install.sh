@@ -38,7 +38,7 @@ install -o quietlink-rendezvous -g quietlink-rendezvous -m 0640   "${PY_SERVER_S
 
 cat > "${SERVICE_FILE}" <<'EOF'
 [Unit]
-Description=QuietLink rendezvous test service
+Description=QuietLink rendezvous service
 After=network-online.target
 Wants=network-online.target
 
@@ -47,7 +47,7 @@ Type=simple
 User=quietlink-rendezvous
 Group=quietlink-rendezvous
 Environment=PORT=8787
-Environment=QUIETLINK_RENDEZVOUS_BUILD=pi-python-test
+Environment=QUIETLINK_RENDEZVOUS_BUILD=pi-python-control-relay
 ExecStart=/usr/bin/python3 /opt/quietlink-rendezvous/server.py
 Restart=on-failure
 RestartSec=2
