@@ -4,7 +4,7 @@ Updated: **2026-09-23**
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.50 / versionCode 62**  
+Current release: **v0.3.51 / versionCode 63**  
 Latest release CI: **passed**
 
 ---
@@ -162,6 +162,39 @@ Internet-path recovery still needs to become transport-independent.
 ---
 
 # 6. Online P2P work completed
+
+
+## v0.3.51 — Developer video rotation lab
+
+Reason:
+- After the older phone was successfully moved to v0.3.50, the remaining visible issue is camera/video orientation.
+- Research against Android Camera2/TextureView guidance and WebRTC showed multiple plausible causes: sender formula convention, TextureView double-rotation, asynchronous control-vs-media rotation timing, front mirroring, and device/HAL quirks.
+- Do not guess a production fix yet; v0.3.51 makes those variables directly testable.
+
+Implemented:
+- Hidden 🛠 Developer tools now contains **Video rotation lab**, including during an active real Video/Baby session.
+- Production defaults remain identical to v0.3.50 until the lab is changed; Reset production defaults clears the local experiment state.
+- H.264 TX formula choices: current QuietLink, Android documented relative rotation, WebRTC/JPEG-style, sensor-only.
+- Orientation source: display rotation or physical OrientationEventListener sensor. The physical mode deliberately ignores Android rotation lock for diagnosis.
+- Local TextureView modes: current stream rotation, Android display-only compensation, no extra rotation, inverse stream rotation.
+- Local front-preview mirroring is independently toggleable and local camera facing is surfaced internally so back-camera previews are not accidentally treated as front in the experiment.
+- QLH2 H.264 v1 keeps the same header/version but can use unused flag bits to carry optional per-access-unit 0/90/180/270 rotation metadata. Old peers ignore the bits. v0.3.51 receivers can choose whether to use them.
+- Manual force-TX rotation, receiver direct/inverse, receiver +0/+90/+180/+270 offset, and Force JPEG are available.
+- Force JPEG is a negotiated experiment: it sends fallback/capability controls so both sides can move to JPEG and later restore H.264 without reconnecting.
+- Logs remain privacy-safe: only categorical lab settings and degree values are recorded.
+
+Human test needed:
+1. Install v0.3.51 on both phones.
+2. Start a same-LAN Video call first.
+3. Open 🛠 -> Video rotation lab while connected.
+4. Test presets in order: Production, Android official + TextureView display-only, WebRTC + per-frame metadata, Android + per-frame metadata.
+5. For each promising preset, test front/back camera in portrait, landscape-left, and landscape-right.
+6. If self-preview only is wrong, isolate Local preview transform + mirror.
+7. If remote only is wrong, isolate sender formula, then remote direct/inverse/offset.
+8. Compare per-frame TX+RX ON versus OFF while rotating live.
+9. Force JPEG once to determine whether the problem is H.264/TextureView-specific or common to both pipelines.
+10. Report the exact settings that are correct on each phone/camera/posture. Then promote only the proven combination to production and reset/remove experimental defaults as appropriate.
+
 
 
 ## v0.3.50 — Older-phone updater signer compatibility
@@ -556,26 +589,26 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: install v0.3.50 on the older phone, then deploy/validate the first real encrypted internet Voice session
+## Primary next checkpoint: validate v0.3.51 video rotation lab, then promote the proven orientation behavior
 
-The v0.3.48 production rendezvous flow was user-confirmed. v0.3.49 now implements the first actual cross-network session path while preserving QL5 and local-first ordering.
+The older-phone updater issue is resolved enough to continue. Do not redesign the video stack yet.
 
-Immediate human step after v0.3.50 CI passes:
-1. On the permanent Raspberry Pi: `cd ~/QuietLink && git pull --ff-only`.
-2. Reinstall/restart from current source: `sudo bash rendezvous/pi/install.sh`.
-3. Verify local and public `/health` report `phase=control-relay-test` and build `pi-python-control-relay`.
-4. Install v0.3.50 on both phones. On the older phone that currently reports signature_mismatch, use the provided signed APK manually once; do not uninstall the existing app.
-5. Phone A on Wi-Fi, Phone B on mobile data; do not configure a developer rendezvous override.
-6. Use the same six-digit CODE, one HOST and one JOIN, in Voice mode.
-7. Confirm both reach **Connected • Voice • Online** and show the same QL5 verification phrase.
-8. Confirm bidirectional audio and chat.
-9. If it fails, export the existing privacy-safe log; do not expose endpoint values manually.
-10. Return both phones to one LAN and confirm local CODE still connects normally.
+Immediate human test after v0.3.51 CI passes:
+1. Install v0.3.51 on both phones without uninstalling.
+2. Put both phones on the same LAN for the first orientation test.
+3. Start Video mode and open 🛠 -> **Video rotation lab** during the call.
+4. Try the four presets in order and note which keeps the **remote video** upright in portrait, landscape-left, and landscape-right.
+5. Repeat front and back camera.
+6. Separately identify whether the **local self-preview** is correct; if not, test the local preview transform/mirror controls without changing the sender formula.
+7. Test per-frame H.264 TX+RX together while physically rotating during a live stream.
+8. Test Force JPEG once. If JPEG is always correct but H.264 is not, focus the production fix on Surface/TextureView/H.264 metadata; if both fail the same way, focus sender orientation math.
+9. Return **Reset production defaults** before ending the comparison unless intentionally preserving a working candidate.
+10. Send back the working settings (or the privacy-safe diagnostic log plus a short description).
 
-Interpretation:
-- If QL5/control connects but audio RX stays zero, direct UDP NAT traversal failed on that network pair; the next implementation checkpoint is opaque encrypted media relay fallback.
-- If audio/chat pass, mark direct internet session establishment validated, then implement internet-path self-healing/network-transition recovery followed by media-relay fallback.
-- Keep `onlineCallsAvailable=false` until the real cross-network path is reliable enough to advertise as usable.
+After a combination is proven:
+- Replace the production H.264 orientation behavior with the smallest proven subset rather than leaving a broad matrix enabled by default.
+- Keep the developer lab available until both phones pass the full orientation matrix.
+- Then resume the queued permanent-Pi v0.3.51 server update and Wi-Fi ↔ mobile-data **Connected • Voice • Online** test from the previous checkpoint.
 
 ---
 
