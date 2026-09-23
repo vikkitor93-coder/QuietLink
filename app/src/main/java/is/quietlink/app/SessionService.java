@@ -325,9 +325,17 @@ public final class SessionService extends Service {
         } else if (ACTION_APPLY_ROTATION_LAB.equals(action)) {
             if (video != null) {
                 video.applyRotationLabConfig();
-                // Re-run negotiated codec choice so Force JPEG can be toggled
-                // live and turning it back off can restore H.264 immediately.
-                video.setH264Enabled(peerH264Capable);
+                if (RotationLabConfig.forceJpeg(this)) {
+                    peerH264Capable = false;
+                    video.setH264Enabled(false);
+                    sendControl("VIDEO_FALLBACK_JPEG");
+                } else {
+                    // Ask the peer to advertise again so H.264 can be restored
+                    // after a live Force JPEG experiment without reconnecting.
+                    sendControl("VIDEO_CAPS:" + localVideoCaps());
+                    sendControl("VIDEO_CAPS_REQUEST");
+                    video.setH264Enabled(peerH264Capable);
+                }
             }
         } else if (ACTION_REFRESH_VIDEO_PIPELINE.equals(action)) {
             if (video != null) video.refreshAfterDisplayWake();
@@ -1238,8 +1246,7 @@ public final class SessionService extends Service {
 
         // Capability negotiation is deliberately harmless to older peers:
         // unknown control messages are ignored, so JPEG remains the fallback.
-        sendControl("VIDEO_CAPS:" + ((h264Capability != null && h264Capability.usable())
-                ? "H264_720P30,JPEG" : "JPEG"));
+        sendControl("VIDEO_CAPS:" + localVideoCaps());
         sendControl("RESUME_CAP:" + (localAutoResumePreference() ? "1" : "0"));
         persistRecoveryCheckpoint();
 
@@ -1272,6 +1279,14 @@ public final class SessionService extends Service {
             } catch (Exception ignored) {}
         }
         QuietLog.log("ONLINE", "udp_path_warmup", "sent=" + sent);
+    }
+
+    private String localVideoCaps() {
+        return h264Capability != null
+                && h264Capability.usable()
+                && !RotationLabConfig.forceJpeg(this)
+                ? "H264_720P30,JPEG"
+                : "JPEG";
     }
 
     private boolean canTransmitAudio() {
@@ -1331,11 +1346,14 @@ public final class SessionService extends Service {
                     String caps = c.substring("VIDEO_CAPS:".length());
                     peerH264Capable = caps.contains("H264_720P30")
                             && h264Capability != null
-                            && h264Capability.usable();
+                            && h264Capability.usable()
+                            && !RotationLabConfig.forceJpeg(this);
                     if (video != null) video.setH264Enabled(peerH264Capable);
                     if (peerH264Capable) {
                         SessionBus.status(connectionLabel() + " • HD video negotiated");
                     }
+                } else if ("VIDEO_CAPS_REQUEST".equals(c)) {
+                    sendControl("VIDEO_CAPS:" + localVideoCaps());
                 } else if ("VIDEO_FALLBACK_JPEG".equals(c)) {
                     peerH264Capable = false;
                     if (video != null) video.setH264Enabled(false);
