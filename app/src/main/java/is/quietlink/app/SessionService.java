@@ -100,6 +100,7 @@ public final class SessionService extends Service {
     private final AtomicBoolean stopped = new AtomicBoolean(false);
     private final AtomicBoolean established = new AtomicBoolean(false);
     private final AtomicBoolean onlineConnecting = new AtomicBoolean(false);
+    private final AtomicBoolean chatFileSending = new AtomicBoolean(false);
     private final Semaphore incomingHandshakeSlots = new Semaphore(4, true);
 
     private ServerSocket serverSocket;
@@ -2429,10 +2430,15 @@ public final class SessionService extends Service {
 
     private void sendDiagnosticLogFile() {
         if (!established.get()) return;
+        if (!chatFileSending.compareAndSet(false, true)) {
+            SessionBus.status("Diagnostic log is already being sent");
+            return;
+        }
 
         final String text = QuietLog.exportText(this);
         final byte[] data = text.getBytes(StandardCharsets.UTF_8);
         if (data.length <= 0 || data.length > CHAT_FILE_MAX_BYTES) {
+            chatFileSending.set(false);
             SessionBus.status("Diagnostic log is too large to send in chat");
             return;
         }
@@ -2443,13 +2449,17 @@ public final class SessionService extends Service {
         try {
             digest = sha256Hex(data);
         } catch (Exception e) {
+            chatFileSending.set(false);
             SessionBus.status("Could not prepare diagnostic log");
             return;
         }
 
         io.execute(() -> {
             CryptoChannel ch = crypto;
-            if (ch == null || !established.get()) return;
+            if (ch == null || !established.get()) {
+                chatFileSending.set(false);
+                return;
+            }
 
             File localCopy = null;
             try {
@@ -2491,6 +2501,11 @@ public final class SessionService extends Service {
                 if (localCopy != null) {
                     try { localCopy.delete(); } catch (Exception ignored) {}
                 }
+                if (established.get() && !stopped.get()) {
+                    handleConnectionLoss(peerLostReason("Connection lost"));
+                }
+            } finally {
+                chatFileSending.set(false);
             }
         });
     }
@@ -2620,7 +2635,9 @@ public final class SessionService extends Service {
     private static String sha256Hex(byte[] data) throws Exception {
         byte[] digest = MessageDigest.getInstance("SHA-256").digest(data);
         StringBuilder out = new StringBuilder(digest.length * 2);
-        for (byte b : digest) out.append(String.format(java.util.Locale.US, "%02x", b));
+        for (byte b : digest) {
+            out.append(String.format(java.util.Locale.US, "%02x", b & 0xff));
+        }
         return out.toString();
     }
 
