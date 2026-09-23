@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "partial",
-  "task": "Productionize QuietLink internet rendezvous",
-  "summary": "v0.3.48 is built and published with automatic production rendezvous and local-first fallback. Two-phone normal-flow validation is now required.",
-  "updated_at": "2026-09-23T02:45:00Z",
-  "artifact": "QuietLink v0.3.48"
+  "status": "working",
+  "task": "Validate first encrypted internet session",
+  "summary": "v0.3.48 production rendezvous matching passed. v0.3.49 adds an opaque reliable QL5 control relay with direct encrypted UDP media and is entering CI before the next two-phone test.",
+  "updated_at": "2026-09-23T03:20:00Z",
+  "artifact": "QuietLink v0.3.49"
 }
