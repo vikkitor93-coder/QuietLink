@@ -1331,9 +1331,13 @@ public final class SessionService extends Service {
         boolean h264 = h264Capability != null
                 && h264Capability.usable()
                 && !RotationLabConfig.forceJpeg(this);
-        return h264
-                ? "H264_720P30,JPEG,ROT_CW1"
-                : "JPEG,ROT_CW1";
+        boolean canonical = !RotationLabConfig.forceLegacyPipeline(this);
+        if (h264) {
+            return canonical
+                    ? "H264_720P30,JPEG,ROT_CW1"
+                    : "H264_720P30,JPEG";
+        }
+        return canonical ? "JPEG,ROT_CW1" : "JPEG";
     }
 
     private boolean canTransmitAudio() {
