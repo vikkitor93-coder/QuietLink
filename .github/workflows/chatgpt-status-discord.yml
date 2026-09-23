@@ -108,12 +108,13 @@ jobs:
               ]
               if artifact and artifact.strip():
                   lines.append("Artifact: " + artifact.strip())
+              lines.append("@everyone")
               content = "\n".join(lines)
               if len(content) > 1900:
                   raise SystemExit("Discord message would exceed safe length")
               payload = {
                   "content": content,
-                  "allowed_mentions": {"parse": []},
+                  "allowed_mentions": {"parse": ["everyone"]},
               }
               pathlib.Path(os.environ["PAYLOAD_FILE"]).write_text(
                   json.dumps(payload, separators=(",", ":")),
