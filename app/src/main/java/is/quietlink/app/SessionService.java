@@ -49,6 +49,7 @@ public final class SessionService extends Service {
     public static final String ACTION_SET_MODE = "is.quietlink.SET_MODE";
     public static final String ACTION_REFRESH_ORIENTATION = "is.quietlink.REFRESH_ORIENTATION";
     public static final String ACTION_REFRESH_VIDEO_PIPELINE = "is.quietlink.REFRESH_VIDEO_PIPELINE";
+    public static final String ACTION_APPLY_ROTATION_LAB = "is.quietlink.APPLY_ROTATION_LAB";
     public static final String ACTION_SWAP_BABY_ROLE = "is.quietlink.SWAP_BABY_ROLE";
     public static final String ACTION_SEND_CHAT = "is.quietlink.SEND_CHAT";
     public static final String ACTION_CHAT_READ = "is.quietlink.CHAT_READ";
@@ -321,6 +322,13 @@ public final class SessionService extends Service {
             cancelChatNotification();
         } else if (ACTION_REFRESH_ORIENTATION.equals(action)) {
             if (video != null) video.refreshOrientation();
+        } else if (ACTION_APPLY_ROTATION_LAB.equals(action)) {
+            if (video != null) {
+                video.applyRotationLabConfig();
+                // Re-run negotiated codec choice so Force JPEG can be toggled
+                // live and turning it back off can restore H.264 immediately.
+                video.setH264Enabled(peerH264Capable);
+            }
         } else if (ACTION_REFRESH_VIDEO_PIPELINE.equals(action)) {
             if (video != null) video.refreshAfterDisplayWake();
         } else if (ACTION_SWAP_BABY_ROLE.equals(action)) {
