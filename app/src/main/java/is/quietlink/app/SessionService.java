@@ -749,9 +749,13 @@ public final class SessionService extends Service {
             serverSocket = new ServerSocket(0);
             serverSocket.setReuseAddress(true);
             int port = serverSocket.getLocalPort();
-            startOnlineRendezvousBootstrap();
             lan = new LanDiscovery(this);
             lan.advertise(code, port);
+            main.postDelayed(() -> {
+                if (!established.get() && !stopped.get()) {
+                    startOnlineRendezvousBootstrap();
+                }
+            }, 1500);
             main.postDelayed(() -> {
                 if (!established.get() && !stopped.get()) {
                     wifiDirect = new WifiDirectHelper(this);
@@ -786,13 +790,24 @@ public final class SessionService extends Service {
 
         OnlineStatus.check(result -> {
             if (result == null || stopped.get() || established.get()) return;
-            if (!result.reachable || !result.callsAvailable
-                    || result.rendezvousUrl == null || result.rendezvousUrl.isEmpty()) {
+
+            // Production rendezvous signaling may be enabled before the public
+            // Online dot turns green. The dot remains conservative until full
+            // internet calling is validated, but CODE host/join can already
+            // exchange candidates through the permanent rendezvous service.
+            boolean rendezvousReady = result.reachable
+                    && result.rendezvousUrl != null
+                    && !result.rendezvousUrl.isEmpty();
+            if (!rendezvousReady) {
                 QuietLog.log("ONLINE", "rendezvous_disabled",
                         "reachable=" + (result.reachable ? 1 : 0)
-                                + " calls=" + (result.callsAvailable ? 1 : 0));
+                                + " calls=" + (result.callsAvailable ? 1 : 0)
+                                + " endpoint=0");
                 return;
             }
+
+            QuietLog.log("ONLINE", "production_rendezvous",
+                    "enabled=1 calls=" + (result.callsAvailable ? 1 : 0));
             startOnlineRendezvousAt(result.rendezvousUrl, false);
         });
     }
@@ -889,9 +904,13 @@ public final class SessionService extends Service {
         try {
             SessionBus.status("Searching the same Wi-Fi first…");
             udpSocket = new DatagramSocket(0);
-            startOnlineRendezvousBootstrap();
             lan = new LanDiscovery(this);
             lan.discover(code, this::connectOnce);
+            main.postDelayed(() -> {
+                if (!established.get() && !connecting.get() && !stopped.get()) {
+                    startOnlineRendezvousBootstrap();
+                }
+            }, 1500);
             main.postDelayed(() -> {
                 if (!established.get() && !connecting.get() && !stopped.get()) {
                     wifiDirect = new WifiDirectHelper(this);
