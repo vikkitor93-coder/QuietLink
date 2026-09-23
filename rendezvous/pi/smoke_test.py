@@ -120,6 +120,69 @@ def main():
         assert body["peer"] == host_peer
         assert body["candidates"] == [host_candidate]
 
+        # Opaque control relay is reliable: duplicate sends are idempotent,
+        # poll does not consume until ACK, and ACK itself is idempotent.
+        relay_data = "SGVsbG9RdWlldExpbms"
+        status, body = post("/v1/relay-send", {
+            "room": room,
+            "peer": host_peer,
+            "to": join_peer,
+            "seq": 1,
+            "data": relay_data,
+        })
+        assert status == 200 and body["ok"] is True
+
+        status, body = post("/v1/relay-send", {
+            "room": room,
+            "peer": host_peer,
+            "to": join_peer,
+            "seq": 1,
+            "data": relay_data,
+        })
+        assert status == 200 and body["ok"] is True and body.get("duplicate") is True
+
+        status, body = post("/v1/relay-poll", {
+            "room": room,
+            "peer": join_peer,
+            "from": host_peer,
+        })
+        assert status == 200 and body["ok"] is True
+        assert body["peerPresent"] is True
+        assert body["seq"] == 1 and body["data"] == relay_data
+
+        status, body2 = post("/v1/relay-poll", {
+            "room": room,
+            "peer": join_peer,
+            "from": host_peer,
+        })
+        assert status == 200 and body2["seq"] == 1 and body2["data"] == relay_data
+
+        status, body = post("/v1/relay-ack", {
+            "room": room,
+            "peer": join_peer,
+            "from": host_peer,
+            "seq": 1,
+        })
+        assert status == 200 and body["ok"] is True
+
+        status, body = post("/v1/relay-ack", {
+            "room": room,
+            "peer": join_peer,
+            "from": host_peer,
+            "seq": 1,
+        })
+        assert status == 200 and body["ok"] is True and body.get("duplicate") is True
+
+        # A late retry after ACK must not re-enqueue the same stream chunk.
+        status, body = post("/v1/relay-send", {
+            "room": room,
+            "peer": host_peer,
+            "to": join_peer,
+            "seq": 1,
+            "data": relay_data,
+        })
+        assert status == 200 and body["ok"] is True and body.get("duplicate") is True
+
         status, body = post(
             "/v1/poll",
             {"room": room, "peer": join_peer},
