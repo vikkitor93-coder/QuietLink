@@ -1,4 +1,4 @@
-# QuietLink 0.3.55
+# QuietLink 0.3.56
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,22 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.56 internet CODE regression + fullscreen/aspect lab
+- Fixes a connection regression where **CODE** host/join was blocked unless `hasUsableLocalNetwork()` was true. CODE is transport-agnostic and can now start with Wi-Fi fully off, using mobile-data internet rendezvous/relay when available.
+- The Wi-Fi/hotspot warning is now scoped only to **Nearby** and **Known**, where a shared local network is genuinely required.
+- CODE startup no longer makes nearby-Wi-Fi/location permission a hard prerequisite; local discovery/Wi-Fi Direct may use those permissions when available, but the secure internet CODE path can proceed without them.
+- Local-first order is unchanged inside the session service: LAN/hotspot remains preferred when present; production rendezvous/relay is still additive and QL5 security is unchanged.
+- Fullscreen Video/Baby controls now include a developer **ROTATE** button so the compact panel can be opened without leaving fullscreen.
+- Entering fullscreen, leaving fullscreen, and Android orientation changes explicitly reapply both remote and local TextureView transforms.
+- Compact rotation panel now has a clear **X** close button.
+- Developer aspect controls are available for:
+  - local/self preview,
+  - remote inline/main video,
+  - fullscreen remote video.
+- Aspect choices: **Auto, 16:9, 4:3, 3:2, 1:1, Stretch**. Auto preserves the native 16:9 H.264 baseline; the other modes deliberately reshape presentation so device-specific camera stretching can be identified.
+- Local mini-preview box follows both the effective local rotation and selected local aspect ratio.
+- Rotation/aspect choices remain developer-only and stored per phone; production protocol/security behavior is unchanged.
 
 ## 0.3.55 compact ROTATE ONLY panel + self-preview aspect fix
 - Adds **🛠 -> ROTATE ONLY • compact live panel** as a fast orientation-testing surface during real Video/Baby calls.
