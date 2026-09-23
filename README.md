@@ -1,4 +1,4 @@
-# QuietLink 0.3.53
+# QuietLink 0.3.54
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,15 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.54 rotation lab dialog compatibility
+- Fixes the older Android phone showing the **Video rotation lab** title/summary but none of the selectable controls.
+- Root cause: that platform's AlertDialog implementation does not reliably render a message and item list together.
+- The lab is now **list-first**. The title shows PRODUCTION/TEST state and every rotation control is rendered through the item list.
+- No camera, codec, protocol, audio, or updater behavior changed.
+- User validation completed before this release:
+  - v0.3.52 -> v0.3.53 **CHECK UPDATE works on the older phone**.
+  - Sleeping Baby audio from the older Baby Station works again.
 
 ## 0.3.53 Baby Station role-swap regression guard
 - A real Sleeping Baby diagnostic trace showed the older phone's microphone recorder and encrypted audio TX were healthy, then the phone changed from **Baby Station** to **Parent Station**. Parent Station intentionally closes continuous microphone capture, which looked like an audio-transmit regression.
