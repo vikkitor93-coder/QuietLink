@@ -4313,7 +4313,11 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 // test phones. Only compensate display rotation locally.
                 drawRotation = RotationLabConfig.normalize(
                         360 - RotationLabConfig.displayRotationDegrees(this));
-                drawMirror = SessionBus.localCameraFront;
+                // Mirroring is a presentation preference, not part of the
+                // orientation math. Preserve an existing saved preference;
+                // fresh installs keep QuietLink's normal mirrored selfie view.
+                drawMirror = RotationLabConfig.mirrorLocalPreview(this)
+                        && SessionBus.localCameraFront;
                 // The visible source is portrait when the raw H.264 sensor
                 // buffer needs a quarter turn, even though TextureView already
                 // performs that sensor normalization for this local preview.
