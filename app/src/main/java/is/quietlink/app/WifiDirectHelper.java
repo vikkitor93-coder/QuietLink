@@ -371,6 +371,21 @@ public final class WifiDirectHelper implements AutoCloseable {
                     SessionBus.status("Wi-Fi Direct • negotiating direct link…");
                     QuietLog.log("P2P", "wifi_direct_connect",
                             "state=requested");
+                    final int attemptedPort = port;
+                    main.postDelayed(() -> {
+                        if (!valid(g) || connectedCallbackDelivered
+                                || expectedPort != attemptedPort) {
+                            return;
+                        }
+                        QuietLog.log("P2P", "wifi_direct_connect_timeout",
+                                "retry=1");
+                        expectedPort = 0;
+                        try {
+                            manager.cancelConnect(
+                                    channel, new ContinueAction(null, null));
+                        } catch (Exception ignored) {}
+                        restartJoinDiscovery(g, 0);
+                    }, 12000L);
                 }
 
                 @Override public void onFailure(int reason) {
