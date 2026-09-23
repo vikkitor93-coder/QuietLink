@@ -9,6 +9,8 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 public final class OnlineStatus {
+    public static final String PRODUCTION_RENDEZVOUS_URL =
+            "https://rendezvousquietlinkvikman.dpdns.org";
     private static final String STATUS_URL =
             "https://vikkitor93-coder.github.io/QuietLink/online-status.json";
     private static final int MAX_RESPONSE_BYTES = 8 * 1024;
