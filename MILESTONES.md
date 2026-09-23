@@ -1,7 +1,7 @@
 # QuietLink milestones
 
 Updated: 2026-09-23  
-Current release: **v0.3.61**  
+Current release: **v0.3.62**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -71,6 +71,13 @@ Source of truth: **GitHub main**
    - ✅ v0.3.61 temporary portrait-only activity lock
    - ✅ v0.3.61 DOWNLOAD action for received chat .txt attachments
    - ✅ v0.3.61 Wi-Fi Direct P2P readiness gate (wait for enabled instead of BUSY hammering)
+   - ✅ Third-phone calibration captured; legacy offsets confirmed device/pipeline-dependent
+   - ✅ v0.3.62 ROT_CW1 capability-negotiated canonical H.264 rotation
+   - ✅ v0.3.62 local TextureView no longer re-applies sensor rotation in canonical mode
+   - ✅ v0.3.62 Camera2 rotate-and-crop AUTO opt-out where supported
+   - ✅ v0.3.62 automatic canonical aspect + per-frame orientation metadata
+   - ✅ Legacy saved profiles retained behind immediate developer override
+   - ⏳ Human: fresh fourth-phone test with zero manual orientation tuning
    - ⏳ Human: verify portrait stays fixed and delayed-enable Wi-Fi Direct reaches group/discovery
    - ⏳ Human: export working phone profiles and send them back for underlying rotation analysis
    - ⏳ Human: re-test log transfer on both phones and no-router Wi-Fi Direct CODE

@@ -357,3 +357,18 @@
 302. P2P privacy: wifi_direct_state may log enabled, wifi_radio and source=query|broadcast only; no MAC, peer name, address, room code or key material.
 303. Orientation evidence checkpoint: keep the uploaded old/new phone profile offsets documented; do not replace them with guessed defaults until the canonical camera transform architecture is addressed.
 
+304. v0.3.62 update continuity: update each calibrated phone from v0.3.61 without uninstalling. Existing VIDEO/BABY saved profiles must remain stored.
+305. Canonical capability negotiation: connect two v0.3.62 phones in Video mode with H.264 available. Diagnostics must log peer canonical capability and `SessionBus.canonicalVideoRotation` must become active only when ROT_CW1 is present on both effective sides.
+306. Mixed-version compatibility: connect v0.3.62 to a pre-v0.3.62 peer. Canonical mode must stay off; legacy saved profile behavior must remain available and unknown ROT_CW1 tokens must not break older peers.
+307. Fresh fourth-phone test: on a phone with no saved rotation profile, install v0.3.62, connect to another v0.3.62 phone, enter Video in portrait, and do not open Video Tune. Incoming main video and local mini preview should both start upright automatically.
+308. Front-camera portrait: canonical sender logs should show sensor/display/facing plus `formula=Canonical clockwise canonical=1`. Common front sensor=270/display=0 should resolve to a 90-degree clockwise remote-display correction.
+309. Back-camera portrait: switch to the rear camera. Common back sensor=90/display=0 should resolve to a 90-degree clockwise remote-display correction and the remote view must stay upright.
+310. Local TextureView double-rotation regression: in canonical mode, local preview transform must use only inverse display rotation (0 degrees under portrait lock), while its aspect derives from canonical source orientation. It must not apply the H.264 sensor angle again.
+311. Canonical aspect: local mini and remote main views must preserve proportions with AUTO. A 90/270-degree canonical stream must be treated as portrait 9:16 without manual 9:16 selection or stretching.
+312. Per-frame metadata: canonical H.264 must transmit and accept rotation metadata regardless of the legacy FRAME TX/RX developer toggles, so the angle follows the access unit that needs it.
+313. Rotate-and-crop opt-out API31+: if NONE is supported, diagnostic events should show `rotate_crop_request canonical=1 none_supported=1` and a one-time capture result. A request/result failure must not crash or disable video.
+314. Legacy override: while two v0.3.62 peers are connected, select **LEGACY PROFILE • FORCED**. Both ends must renegotiate without ROT_CW1, canonical state must turn off, and the existing saved per-device profile must become effective. Turning the override back off must allow canonical mode to renegotiate.
+315. Portrait lock remains: physically rotate the phone landscape-left/right during the canonical test; the QuietLink activity stays portrait.
+316. Calibration export: exported profile/log text must state `Canonical H.264 rotation active: YES/NO` so fourth-phone results can be diagnosed without screenshots.
+317. Privacy: canonical capability/orientation logs may contain sensor/display angles, camera facing category, rotate/crop mode, and capability booleans only; never camera content, network identifiers, pairing code, keys or peer identity.
+

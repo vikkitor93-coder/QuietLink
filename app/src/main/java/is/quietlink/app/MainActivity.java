@@ -974,6 +974,35 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         addWindowSelector(box, dialog);
         addVideoProfileControls(box, dialog);
 
+        boolean legacyForced = RotationLabConfig.forceLegacyPipeline(this);
+        boolean canonicalActive = SessionBus.canonicalVideoRotation
+                && !legacyForced;
+        Button pipeline = canonicalActive
+                ? primary("AUTO ORIENTATION • ACTIVE")
+                : secondary(legacyForced
+                    ? "LEGACY PROFILE • FORCED"
+                    : "AUTO ORIENTATION • WAITING FOR COMPATIBLE PEER");
+        pipeline.setTextSize(8);
+        pipeline.setContentDescription(
+                legacyForced
+                        ? "Use automatic normalized orientation instead of the saved legacy profile"
+                        : "Force the saved legacy video rotation profile");
+        pipeline.setOnClickListener(v -> {
+            RotationLabConfig.setForceLegacyPipeline(
+                    this, !RotationLabConfig.forceLegacyPipeline(this));
+            applyRotationLabNow();
+            refreshQuickRotationPanelAtSameScroll(box, dialog);
+        });
+        box.addView(pipeline, lp(-1,dp(34),0,2,0,4));
+
+        if (canonicalActive) {
+            TextView canonicalNote = text(
+                    "Normalized mode is using one clockwise rotation convention. "
+                            + "Saved manual offsets stay stored but are bypassed.",
+                    8, muted(), false);
+            box.addView(canonicalNote, lp(-1,-2,0,0,0,4));
+        }
+
         if (quickRotationWindow == 1) {
             TextView current = text(
                     "WINDOW 1 • MAIN / INCOMING"
@@ -1077,7 +1106,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     dialog);
 
             addQuickRotationChoices(box, "SENDER FORMULA",
-                    new String[]{"QL","ANDROID","WEBRTC","SENSOR"},
+                    new String[]{"QL","ANDROID","WEBRTC","SENSOR","CANONICAL"},
                     RotationLabConfig.txFormula(this),
                     index -> RotationLabConfig.setTxFormula(this, index),
                     dialog);
@@ -1412,6 +1441,12 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                         + RotationLabConfig.aspectLabel(RotationLabConfig.remoteAspect(this)),
                 "Fullscreen remote aspect • "
                         + RotationLabConfig.aspectLabel(RotationLabConfig.fullscreenAspect(this)),
+                "Orientation pipeline • "
+                        + (RotationLabConfig.forceLegacyPipeline(this)
+                            ? "FORCE LEGACY PROFILE"
+                            : (SessionBus.canonicalVideoRotation
+                                ? "AUTO NORMALIZED • ACTIVE"
+                                : "AUTO NORMALIZED • WAITING")),
                 "Show test instructions",
                 "Reset production defaults"
         };
@@ -1430,7 +1465,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                                     "Current QuietLink • sensor − display for both cameras",
                                     "Android relative • front sensor−display / back sensor+display",
                                     "WebRTC/JPEG style • front sensor+display / back sensor−display",
-                                    "Sensor only • ignore device rotation"
+                                    "Sensor only • ignore device rotation",
+                                    "Canonical clockwise • normalized raw H.264 experiment"
                             },
                             RotationLabConfig.txFormula(this),
                             index -> RotationLabConfig.setTxFormula(this, index));
@@ -1506,9 +1542,15 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                             RotationLabConfig.fullscreenAspect(this),
                             mode -> RotationLabConfig.setFullscreenAspect(this, mode));
                     else if (which == 15) {
+                        RotationLabConfig.setForceLegacyPipeline(
+                                this, !RotationLabConfig.forceLegacyPipeline(this));
+                        applyRotationLabNow();
+                        showVideoRotationLab();
+                    } else if (which == 16) {
                         showRotationLabInstructions();
                     } else {
                         RotationLabConfig.resetProduction(this);
+                        RotationLabConfig.setForceLegacyPipeline(this, false);
                         applyRotationLabNow();
                         Toast.makeText(this,
                                 "Rotation lab reset to production behavior",
@@ -3553,15 +3595,27 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     }
 
     private boolean localPreviewIsPortrait() {
-        int r = RotationLabConfig.enabled(this)
-                ? RotationLabConfig.resolveLocalPreviewRotation(
-                    this, SessionBus.localVideoRotation)
-                : RotationLabConfig.normalize(SessionBus.localVideoRotation);
+        int r;
+        if (SessionBus.canonicalVideoRotation
+                && !RotationLabConfig.forceLegacyPipeline(this)) {
+            // Camera-backed TextureView already normalizes the sensor to the
+            // device's natural orientation. The stream rotation is still the
+            // reliable source for whether the visible source is portrait.
+            r = RotationLabConfig.normalize(SessionBus.localVideoRotation);
+        } else {
+            r = RotationLabConfig.enabled(this)
+                    ? RotationLabConfig.resolveLocalPreviewRotation(
+                        this, SessionBus.localVideoRotation)
+                    : RotationLabConfig.normalize(SessionBus.localVideoRotation);
+        }
         return r == 90 || r == 270;
     }
 
     private int[] localPreviewBoxDp() {
-        int mode = RotationLabConfig.localAspect(this);
+        int mode = SessionBus.canonicalVideoRotation
+                && !RotationLabConfig.forceLegacyPipeline(this)
+                ? RotationLabConfig.ASPECT_AUTO
+                : RotationLabConfig.localAspect(this);
         float ratio;
 
         if (mode == RotationLabConfig.ASPECT_AUTO) {
@@ -4244,51 +4298,84 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         if (width <= 0 || height <= 0) return;
 
         int r = ((rotation % 360) + 360) % 360;
-        // Production defaults preserve the existing behavior. When the hidden
-        // rotation lab is enabled, the local TextureView can be decoupled from
-        // transmitted frame rotation so Android's display-only strategy can be
-        // tested independently.
+        boolean canonical = SessionBus.canonicalVideoRotation
+                && !RotationLabConfig.forceLegacyPipeline(this);
+
         int drawRotation = r;
         boolean drawMirror = mirror;
-        if (mirror && RotationLabConfig.enabled(this)) {
-            drawRotation = RotationLabConfig.resolveLocalPreviewRotation(this, r);
-            drawMirror = RotationLabConfig.mirrorLocalPreview(this)
-                    && SessionBus.localCameraFront;
+        boolean sourceQuarterTurn;
+
+        if (canonical) {
+            if (mirror) {
+                // Camera2-backed TextureView already applies the producer's
+                // sensor-orientation transform. Applying the transmitted sensor
+                // angle here was the double-rotation bug seen across the three
+                // test phones. Only compensate display rotation locally.
+                drawRotation = RotationLabConfig.normalize(
+                        360 - RotationLabConfig.displayRotationDegrees(this));
+                // Mirroring is a presentation preference, not part of the
+                // orientation math. Preserve an existing saved preference;
+                // fresh installs keep QuietLink's normal mirrored selfie view.
+                drawMirror = RotationLabConfig.mirrorLocalPreview(this)
+                        && SessionBus.localCameraFront;
+                // The visible source is portrait when the raw H.264 sensor
+                // buffer needs a quarter turn, even though TextureView already
+                // performs that sensor normalization for this local preview.
+                sourceQuarterTurn = r == 90 || r == 270;
+            } else {
+                // Decoder TextureView has no Camera2 sensor transform. The
+                // canonical wire value is explicitly clockwise display rotation.
+                drawRotation = r;
+                drawMirror = false;
+                sourceQuarterTurn = r == 90 || r == 270;
+            }
+        } else {
+            // Legacy path preserves saved per-device profiles for old peers and
+            // for the developer override.
+            if (mirror && RotationLabConfig.enabled(this)) {
+                drawRotation = RotationLabConfig.resolveLocalPreviewRotation(this, r);
+                drawMirror = RotationLabConfig.mirrorLocalPreview(this)
+                        && SessionBus.localCameraFront;
+            }
+            sourceQuarterTurn = drawRotation == 90 || drawRotation == 270;
         }
+
         if (mirror) {
             QuietLog.log("UI", "local_preview_transform",
                     "view=" + width + "x" + height
                             + " rotation=" + drawRotation
+                            + " source_rotation=" + r
+                            + " canonical=" + (canonical ? 1 : 0)
                             + " mirror=" + (drawMirror ? 1 : 0)
                             + " front=" + (SessionBus.localCameraFront ? 1 : 0));
         }
-        boolean quarterTurn = drawRotation == 90 || drawRotation == 270;
-        int aspectMode = mirror
-                ? RotationLabConfig.localAspect(this)
-                : (isFullscreenVideoRendering()
-                    ? RotationLabConfig.fullscreenAspect(this)
-                    : RotationLabConfig.remoteAspect(this));
+
+        boolean drawQuarterTurn = drawRotation == 90 || drawRotation == 270;
+        int aspectMode = canonical
+                ? RotationLabConfig.ASPECT_AUTO
+                : (mirror
+                    ? RotationLabConfig.localAspect(this)
+                    : (isFullscreenVideoRendering()
+                        ? RotationLabConfig.fullscreenAspect(this)
+                        : RotationLabConfig.remoteAspect(this)));
 
         float cx = width / 2f;
         float cy = height / 2f;
         android.graphics.Matrix matrix = new android.graphics.Matrix();
 
         if (RotationLabConfig.stretchAspect(aspectMode)) {
-            // Deliberate diagnostic option: fill the target rectangle even if
-            // that changes proportions. Useful for confirming whether the
-            // device/Surface pipeline itself is pre-stretching the camera.
-            float preRotateWidth = quarterTurn ? height : width;
-            float preRotateHeight = quarterTurn ? width : height;
+            float preRotateWidth = drawQuarterTurn ? height : width;
+            float preRotateHeight = drawQuarterTurn ? width : height;
             matrix.setScale(preRotateWidth / width, preRotateHeight / height, cx, cy);
         } else {
             float effectiveSourceWidth;
             float effectiveSourceHeight;
             if (aspectMode == RotationLabConfig.ASPECT_AUTO) {
-                effectiveSourceWidth = quarterTurn ? H264Codec.HEIGHT : H264Codec.WIDTH;
-                effectiveSourceHeight = quarterTurn ? H264Codec.WIDTH : H264Codec.HEIGHT;
+                effectiveSourceWidth = sourceQuarterTurn
+                        ? H264Codec.HEIGHT : H264Codec.WIDTH;
+                effectiveSourceHeight = sourceQuarterTurn
+                        ? H264Codec.WIDTH : H264Codec.HEIGHT;
             } else {
-                // Explicit aspect is the FINAL visible WIDTH:HEIGHT after
-                // rotation, which makes 9:16 genuinely different from 16:9.
                 float ratio = RotationLabConfig.aspectRatio(aspectMode);
                 effectiveSourceWidth = ratio * 1000f;
                 effectiveSourceHeight = 1000f;
@@ -4299,8 +4386,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     : Math.min(width / effectiveSourceWidth, height / effectiveSourceHeight);
             float displayedWidth = effectiveSourceWidth * scale;
             float displayedHeight = effectiveSourceHeight * scale;
-            float preRotateWidth = quarterTurn ? displayedHeight : displayedWidth;
-            float preRotateHeight = quarterTurn ? displayedWidth : displayedHeight;
+            float preRotateWidth = drawQuarterTurn ? displayedHeight : displayedWidth;
+            float preRotateHeight = drawQuarterTurn ? displayedWidth : displayedHeight;
             matrix.setScale(preRotateWidth / width, preRotateHeight / height, cx, cy);
         }
         matrix.postRotate(drawRotation, cx, cy);

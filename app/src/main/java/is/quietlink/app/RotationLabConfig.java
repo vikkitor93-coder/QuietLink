@@ -17,6 +17,9 @@ final class RotationLabConfig {
     static final int TX_ANDROID_RELATIVE = 1;
     static final int TX_WEBRTC_STYLE = 2;
     static final int TX_SENSOR_ONLY = 3;
+    // v0.3.62 wire semantics: number means the clockwise rotation that a
+    // generic display surface should apply to raw sensor-oriented pixels.
+    static final int TX_CANONICAL_CLOCKWISE = 4;
 
     static final int SOURCE_DISPLAY = 0;
     static final int SOURCE_PHYSICAL_SENSOR = 1;
@@ -65,6 +68,7 @@ final class RotationLabConfig {
     private static final String KEY_LOCAL_ASPECT = "local_aspect";
     private static final String KEY_REMOTE_ASPECT = "remote_aspect";
     private static final String KEY_FULLSCREEN_ASPECT = "fullscreen_aspect";
+    private static final String KEY_FORCE_LEGACY_PIPELINE = "force_legacy_pipeline";
     private static final String PROFILE_PREFIX = "profile_";
 
     private RotationLabConfig() {}
@@ -217,7 +221,7 @@ final class RotationLabConfig {
     static void setTxFormula(Context context, int value) {
         prefs(context).edit()
                 .putBoolean(KEY_ENABLED, true)
-                .putInt(KEY_TX_FORMULA, clamp(value, TX_CURRENT, TX_SENSOR_ONLY))
+                .putInt(KEY_TX_FORMULA, clamp(value, TX_CURRENT, TX_CANONICAL_CLOCKWISE))
                 .apply();
     }
 
@@ -329,6 +333,17 @@ final class RotationLabConfig {
         if (!enabled(context)) return 0;
         return normalizeQuarter(prefs(context).getInt(KEY_REMOTE_OFFSET, 0));
     }
+
+    static boolean forceLegacyPipeline(Context context) {
+        return prefs(context).getBoolean(KEY_FORCE_LEGACY_PIPELINE, false);
+    }
+
+    static void setForceLegacyPipeline(Context context, boolean value) {
+        prefs(context).edit()
+                .putBoolean(KEY_FORCE_LEGACY_PIPELINE, value)
+                .apply();
+    }
+
 
     static void setRemoteOffset(Context context, int value) {
         prefs(context).edit()
@@ -502,10 +517,35 @@ final class RotationLabConfig {
             }
             case TX_SENSOR_ONLY:
                 return sensor;
+            case TX_CANONICAL_CLOCKWISE:
+                return computeCanonicalClockwiseRotation(
+                        sensor, frontFacing, device);
             case TX_CURRENT:
             default:
                 return normalize(sensor - device);
         }
+    }
+
+    /**
+     * Returns one unambiguous wire/display semantic: clockwise rotation to
+     * apply to raw sensor-oriented pixels.
+     *
+     * Android's documented Camera2 relative-rotation formula uses opposite
+     * visual directions for front/back camera sensor orientation. QuietLink's
+     * old protocol forwarded that number and then treated it as one generic
+     * TextureView angle. This converts the result to a single clockwise display
+     * correction before it is sent to the peer.
+     */
+    static int computeCanonicalClockwiseRotation(int sensorDegrees,
+                                                 boolean frontFacing,
+                                                 int deviceDegrees) {
+        int sensor = normalize(sensorDegrees);
+        int device = normalize(deviceDegrees);
+        int sign = frontFacing ? 1 : -1;
+        int androidRelative = normalize(sensor - device * sign);
+        return frontFacing
+                ? normalize(360 - androidRelative)
+                : androidRelative;
     }
 
     static int resolveLocalPreviewRotation(Context context, int streamRotation) {
@@ -567,6 +607,8 @@ final class RotationLabConfig {
                 + " • localAspect=" + aspectLabel(localAspect(context))
                 + " • remoteAspect=" + aspectLabel(remoteAspect(context))
                 + " • fullAspect=" + aspectLabel(fullscreenAspect(context))
+                + " • pipeline=" + (forceLegacyPipeline(context)
+                    ? "LEGACY OVERRIDE" : "AUTO")
                 + " • codec=" + (forceJpeg(context) ? "JPEG" : "AUTO");
     }
 
@@ -575,6 +617,7 @@ final class RotationLabConfig {
             case TX_ANDROID_RELATIVE: return "Android relative";
             case TX_WEBRTC_STYLE: return "WebRTC/JPEG";
             case TX_SENSOR_ONLY: return "Sensor only";
+            case TX_CANONICAL_CLOCKWISE: return "Canonical clockwise";
             default: return "Current QL";
         }
     }

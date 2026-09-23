@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "partial",
-  "task": "Validate portrait lock, chat download, and Wi-Fi Direct readiness",
-  "summary": "v0.3.61 built, signed, tested, and published successfully. Supplied profiles are preserved; app is portrait-only for now. Human checks: DOWNLOAD received chat .txt, confirm portrait remains fixed, then test no-router Wi-Fi Direct delayed-enable behavior.",
-  "updated_at": "2026-09-23T20:25:00Z",
-  "artifact": "QuietLink v0.3.61 APK"
+  "status": "working",
+  "task": "Normalize camera/H264/TextureView orientation across devices",
+  "summary": "v0.3.62 adds capability-negotiated canonical clockwise H.264 rotation, per-frame metadata, Camera2 rotate/crop opt-out, display-only local TextureView correction, canonical aspect handling, and a legacy-profile override. Third-phone evidence is documented. CI is next.",
+  "updated_at": "2026-09-23T21:33:00Z",
+  "artifact": "QuietLink v0.3.62"
 }

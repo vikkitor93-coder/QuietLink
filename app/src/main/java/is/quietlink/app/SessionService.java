@@ -116,6 +116,7 @@ public final class SessionService extends Service {
     private VideoEngine video;
     private H264Codec.Capability h264Capability;
     private volatile boolean peerH264Capable = false;
+    private volatile boolean peerCanonicalRotation = false;
     private LanDiscovery lan;
     private WifiDirectHelper wifiDirect;
     private PeerDiscovery peerDiscovery;
@@ -232,6 +233,9 @@ public final class SessionService extends Service {
             connecting.set(false);
             onlineConnecting.set(false);
             internetControlRelay = false;
+            peerH264Capable = false;
+            peerCanonicalRotation = false;
+            SessionBus.canonicalVideoRotation(false);
             recoveryCount = 0;
             lastDiagRttMs = -1L;
             host = ACTION_HOST.equals(action);
@@ -1255,9 +1259,12 @@ public final class SessionService extends Service {
                     h264Capability,
                     reason -> {
                         peerH264Capable = false;
+                        peerCanonicalRotation = false;
+                        SessionBus.canonicalVideoRotation(false);
                         sendControl("VIDEO_FALLBACK_JPEG");
                     },
                     () -> sendControl("VIDEO_KEYFRAME_REQUEST"));
+            video.setPeerCanonicalRotation(peerCanonicalRotation);
             boolean cameraAllowed = checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
             boolean sendVideo = resumed
                     ? (recoveryLocalVideoEnabled && cameraAllowed)
@@ -1321,11 +1328,16 @@ public final class SessionService extends Service {
     }
 
     private String localVideoCaps() {
-        return h264Capability != null
+        boolean h264 = h264Capability != null
                 && h264Capability.usable()
-                && !RotationLabConfig.forceJpeg(this)
-                ? "H264_720P30,JPEG"
-                : "JPEG";
+                && !RotationLabConfig.forceJpeg(this);
+        boolean canonical = !RotationLabConfig.forceLegacyPipeline(this);
+        if (h264) {
+            return canonical
+                    ? "H264_720P30,JPEG,ROT_CW1"
+                    : "H264_720P30,JPEG";
+        }
+        return canonical ? "JPEG,ROT_CW1" : "JPEG";
     }
 
     private boolean canTransmitAudio() {
@@ -1395,19 +1407,35 @@ public final class SessionService extends Service {
                     }
                 } else if (c.startsWith("VIDEO_CAPS:")) {
                     String caps = c.substring("VIDEO_CAPS:".length());
+                    peerCanonicalRotation = caps.contains("ROT_CW1");
                     peerH264Capable = caps.contains("H264_720P30")
                             && h264Capability != null
                             && h264Capability.usable()
                             && !RotationLabConfig.forceJpeg(this);
-                    if (video != null) video.setH264Enabled(peerH264Capable);
+                    if (video != null) {
+                        video.setPeerCanonicalRotation(peerCanonicalRotation);
+                        video.setH264Enabled(peerH264Capable);
+                    }
+                    QuietLog.log("VIDEO", "video_caps_negotiated",
+                            "h264=" + (peerH264Capable ? 1 : 0)
+                                    + " canonical="
+                                    + (peerCanonicalRotation ? 1 : 0));
                     if (peerH264Capable) {
-                        SessionBus.status(connectionLabel() + " • HD video negotiated");
+                        SessionBus.status(connectionLabel()
+                                + (SessionBus.canonicalVideoRotation
+                                    ? " • HD video • auto orientation"
+                                    : " • HD video negotiated"));
                     }
                 } else if ("VIDEO_CAPS_REQUEST".equals(c)) {
                     sendControl("VIDEO_CAPS:" + localVideoCaps());
                 } else if ("VIDEO_FALLBACK_JPEG".equals(c)) {
                     peerH264Capable = false;
-                    if (video != null) video.setH264Enabled(false);
+                    peerCanonicalRotation = false;
+                    if (video != null) {
+                        video.setPeerCanonicalRotation(false);
+                        video.setH264Enabled(false);
+                    }
+                    SessionBus.canonicalVideoRotation(false);
                     SessionBus.status(connectionLabel() + " • video compatibility mode");
                 } else if ("VIDEO_KEYFRAME_REQUEST".equals(c)) {
                     if (video != null) video.requestKeyFrame();
@@ -1614,6 +1642,8 @@ public final class SessionService extends Service {
         lan = null;
         wifiDirect = null;
         peerH264Capable = false;
+        peerCanonicalRotation = false;
+        SessionBus.canonicalVideoRotation(false);
 
         SessionBus.reconnecting("Connection interrupted • reconnecting to " + safePeerName(SessionBus.peerName) + "…");
         updateSessionNotification("Reconnecting • " + safePeerName(SessionBus.peerName));
@@ -2295,9 +2325,12 @@ public final class SessionService extends Service {
                     h264Capability,
                     reason -> {
                         peerH264Capable = false;
+                        peerCanonicalRotation = false;
+                        SessionBus.canonicalVideoRotation(false);
                         sendControl("VIDEO_FALLBACK_JPEG");
                     },
                     () -> sendControl("VIDEO_KEYFRAME_REQUEST"));
+                    video.setPeerCanonicalRotation(peerCanonicalRotation);
                     video.setH264Enabled(peerH264Capable);
                     newlyCreated = true;
                 }
@@ -3147,6 +3180,8 @@ public final class SessionService extends Service {
         wifiDirect = null;
         peerDiscovery = null;
         peerH264Capable = false;
+        peerCanonicalRotation = false;
+        SessionBus.canonicalVideoRotation(false);
         serverSocket = null;
         pairingServerSocket = null;
         udpSocket = null;

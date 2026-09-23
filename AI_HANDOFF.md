@@ -4,8 +4,8 @@ Updated: **2026-09-23**
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.61 / versionCode 73**  
-Latest release CI: **passed**
+Current release: **v0.3.62 / versionCode 74**  
+Latest release CI: **pending v0.3.62 validation**
 
 ---
 
@@ -162,6 +162,33 @@ Internet-path recovery still needs to become transport-independent.
 ---
 
 # 6. Online P2P work completed
+
+
+## v0.3.62 — Canonical H.264 orientation normalization
+
+New evidence from a third phone:
+- display=0, local reported=270, remote reported=270
+- working VIDEO INLINE/FULLSCREEN: Window 1 Direct +270 Auto; Window 2 Stream +90 9:16 mirror ON; Sender Auto / Current QL / Display / frameTX OFF.
+- Before tuning, that phone logged front sensor=270/display=0 -> stream rotation 270 and the local TextureView was also rotated 270. The user made the local preview correct by adding +90, producing an effective local transform of 0.
+- Combined with the first two profiles, every working local mini preview ended at effective app-level rotation 0 in portrait even though the transmitted stream values differed.
+
+Root cause addressed:
+- Camera2-backed TextureView already compensates camera sensor orientation. QuietLink was reusing the sender/sensor rotation as an app TextureView transform, so local preview could be double-rotated.
+- The old VIDEO_ROT value also mixed Android's front/back relative-rotation convention with a generic clockwise decoder Matrix angle.
+- API31+ rotate-and-crop AUTO can additionally alter processed outputs depending on compatibility/window state, introducing another device-specific transform.
+
+New ROT_CW1 path:
+- local capabilities advertise ROT_CW1 unless developer forces legacy.
+- Canonical mode activates only for H.264 when the peer advertises ROT_CW1.
+- Sender requests SCALER_ROTATE_AND_CROP_NONE when supported and reports the actual result once.
+- Sender converts Camera2 orientation to one wire meaning: clockwise rotation required to display raw sensor-oriented H.264 pixels.
+- Canonical rotation is attached to every H.264 access unit and also retained in VIDEO_ROT control for transition/recovery compatibility.
+- Remote decoder TextureView applies the canonical value directly.
+- Local Camera2 TextureView applies display rotation only and front-camera mirroring; it does not apply the sensor/H.264 angle a second time.
+- AUTO aspect uses canonical source orientation; saved manual aspect/offset controls are bypassed while canonical is active.
+- Existing saved profiles remain untouched. Mixed-version peers automatically use legacy. Developer Video Tune can force LEGACY PROFILE for immediate fallback and capability renegotiation.
+- Portrait activity lock remains during validation.
+
 
 
 ## v0.3.61 — Portrait lock + chat attachment download + P2P readiness gate
@@ -884,17 +911,17 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: validate portrait lock and P2P delayed-enable behavior
+## Primary next checkpoint: fresh fourth-phone canonical-orientation test
 
-After v0.3.61 CI passes:
-1. Update both phones through CHECK UPDATE.
-2. Confirm existing saved VIDEO profiles remain intact and portrait video is still correct.
-3. Physically rotate both phones landscape-left/right in lobby, inline Video, fullscreen Video and Baby. QuietLink must remain portrait.
-4. Receive a diagnostic .txt in chat, open it, press DOWNLOAD, save it through Android's picker, and verify the saved file can be shared/uploaded normally.
-5. Wi-Fi Direct: Wi-Fi radio ON on both phones, no shared router/hotspot, optional Nearby/Location permission granted.
-6. If Android initially reports P2P disabled, QuietLink should wait rather than flood BUSY. When state becomes enabled, host/join P2P work should begin automatically.
-7. If P2P still never reaches enabled on one phone while Wi-Fi radio is on, export the new log; compare wifi_radio=1 with requestP2pState/broadcast state to determine whether the limitation is framework/OEM rather than QuietLink operation ordering.
-8. Keep portrait lock until a later canonical CameraX/EGL normalization rewrite is proven on both devices.
+After v0.3.62 CI passes:
+1. Update at least two existing phones to v0.3.62 and install v0.3.62 on a fourth phone with no saved calibration profile.
+2. On the fourth phone, do **not** touch Video Tune. Connect to another v0.3.62 phone and open Video in portrait.
+3. Expected: AUTO ORIENTATION shows ACTIVE; incoming main video is upright; local mini preview is upright and proportionally portrait without manual 9:16 or rotation offsets.
+4. Switch front/back cameras and enter/exit fullscreen. No manual offset should become necessary.
+5. Export LOG + PROFILES from the fourth phone. Look for `formula=Canonical clockwise canonical=1`, `Canonical H.264 rotation active: YES`, and API31+ rotate/crop request/result events.
+6. If normalized mode is wrong, use Video Tune -> **LEGACY PROFILE • FORCED**. This should immediately restore saved/manual legacy controls without deleting them. Export the log from the bad canonical state before further tuning.
+7. Keep the portrait-only activity lock until this succeeds on the existing three devices plus the fresh fourth device.
+8. Continue Wi-Fi Direct delayed-enable validation after the video checkpoint.
 
 ---
 

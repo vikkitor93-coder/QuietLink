@@ -12,6 +12,7 @@ import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
 import android.media.ExifInterface;
+import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.provider.Settings;
@@ -111,6 +112,8 @@ public final class VideoEngine implements AutoCloseable {
     private volatile Surface localPreviewSurface;
     private volatile boolean h264Enabled = false;
     private volatile boolean h264Session = false;
+    private volatile boolean peerCanonicalRotation = false;
+    private volatile boolean appliedCanonicalRotation = false;
     private long lastAdaptAtMs = 0;
     private int stableAdaptSamples = 0;
     private volatile boolean remoteVideoExpected = true;
@@ -150,7 +153,8 @@ public final class VideoEngine implements AutoCloseable {
             }
 
             @Override public void onFrameRotation(int degrees) {
-                if (RotationLabConfig.acceptFrameRotation(context)) {
+                if (canonicalRotationActive()
+                        || RotationLabConfig.acceptFrameRotation(context)) {
                     setRemoteRotation(degrees);
                 }
             }
@@ -262,10 +266,14 @@ public final class VideoEngine implements AutoCloseable {
                 && h264Capability != null
                 && h264Capability.usable()
                 && !RotationLabConfig.forceJpeg(context);
-        if (h264Enabled == use) return;
+        if (h264Enabled == use) {
+            updateRotationProtocolState(false);
+            return;
+        }
 
         h264Enabled = use;
         h264.setEnabled(use);
+        updateRotationProtocolState(false);
         if (use) {
             SessionBus.video(null);
             SessionBus.localVideo(null);
@@ -273,6 +281,54 @@ public final class VideoEngine implements AutoCloseable {
         }
 
         if (running.get() && sendingEnabled) {
+            startCamera(currentFacing);
+        }
+    }
+
+    public void setPeerCanonicalRotation(boolean supported) {
+        boolean before = canonicalRotationActive();
+        peerCanonicalRotation = supported;
+        boolean after = canonicalRotationActive();
+        updateRotationProtocolState(false);
+
+        if (before != after && running.get() && sendingEnabled && h264Enabled) {
+            startCamera(currentFacing);
+        } else if (running.get() && sendingEnabled && h264Enabled) {
+            refreshOrientation();
+        }
+
+        QuietLog.log("VIDEO", "rotation_wire_capability",
+                "peer=" + (supported ? 1 : 0)
+                        + " active=" + (after ? 1 : 0)
+                        + " legacy_override="
+                        + (RotationLabConfig.forceLegacyPipeline(context) ? 1 : 0));
+    }
+
+    private boolean canonicalRotationActive() {
+        return h264Enabled
+                && peerCanonicalRotation
+                && !RotationLabConfig.forceLegacyPipeline(context);
+    }
+
+    private void updateRotationProtocolState(boolean restartCameraIfChanged) {
+        boolean canonical = canonicalRotationActive();
+        boolean changed = appliedCanonicalRotation != canonical;
+        appliedCanonicalRotation = canonical;
+        SessionBus.canonicalVideoRotation(canonical);
+        h264.setRotationMetadataMode(
+                canonical || RotationLabConfig.sendFrameRotation(context),
+                canonical || RotationLabConfig.acceptFrameRotation(context));
+
+        if (remoteReportedRotationDegrees >= 0) {
+            remoteRotationDegrees = canonical
+                    ? RotationLabConfig.normalize(remoteReportedRotationDegrees)
+                    : RotationLabConfig.resolveRemoteRotation(
+                            context, remoteReportedRotationDegrees);
+            SessionBus.videoRotation(remoteRotationDegrees);
+        }
+
+        if (restartCameraIfChanged && changed
+                && running.get() && sendingEnabled && h264Enabled) {
             startCamera(currentFacing);
         }
     }
@@ -691,6 +747,7 @@ public final class VideoEngine implements AutoCloseable {
             record.addTarget(encoderSurface);
             if (previewSurface != null && previewSurface.isValid()) record.addTarget(previewSurface);
             record.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
+            applyCanonicalRotateAndCrop(record, currentCameraId);
 
             Range<Integer> fps = choose30FpsRange(currentCameraId);
             if (fps != null) {
@@ -708,7 +765,10 @@ public final class VideoEngine implements AutoCloseable {
                     try {
                         session = s;
                         h264Session = true;
-                        s.setRepeatingRequest(record.build(), null, cameraHandler);
+                        s.setRepeatingRequest(
+                                record.build(),
+                                canonicalCaptureCallback(),
+                                cameraHandler);
                         int rotation = surfaceStreamOrientation(currentCameraId);
                         lastCaptureRotation = rotation;
                         h264.setLocalFrameRotation(rotation);
@@ -729,6 +789,59 @@ public final class VideoEngine implements AutoCloseable {
         } catch (Exception e) {
             handleH264Failure("H.264 setup: " + safeMessage(e));
         }
+    }
+
+    private void applyCanonicalRotateAndCrop(
+            CaptureRequest.Builder builder, String cameraId) {
+        if (!canonicalRotationActive() || Build.VERSION.SDK_INT < 31
+                || builder == null || cameraId == null) {
+            return;
+        }
+        try {
+            int[] modes = cameraManager.getCameraCharacteristics(cameraId)
+                    .get(CameraCharacteristics.SCALER_AVAILABLE_ROTATE_AND_CROP_MODES);
+            boolean noneSupported = false;
+            if (modes != null) {
+                for (int mode : modes) {
+                    if (mode == CameraMetadata.SCALER_ROTATE_AND_CROP_NONE) {
+                        noneSupported = true;
+                        break;
+                    }
+                }
+            }
+            if (noneSupported) {
+                builder.set(
+                        CaptureRequest.SCALER_ROTATE_AND_CROP,
+                        CameraMetadata.SCALER_ROTATE_AND_CROP_NONE);
+            }
+            QuietLog.log("VIDEO", "rotate_crop_request",
+                    "canonical=1 none_supported=" + (noneSupported ? 1 : 0));
+        } catch (Exception e) {
+            QuietLog.log("VIDEO", "rotate_crop_request_failed",
+                    "type=" + e.getClass().getSimpleName());
+        }
+    }
+
+    private CameraCaptureSession.CaptureCallback canonicalCaptureCallback() {
+        if (!canonicalRotationActive() || Build.VERSION.SDK_INT < 31) {
+            return null;
+        }
+        AtomicBoolean logged = new AtomicBoolean(false);
+        return new CameraCaptureSession.CaptureCallback() {
+            @Override public void onCaptureCompleted(
+                    CameraCaptureSession session,
+                    CaptureRequest request,
+                    TotalCaptureResult result) {
+                if (!logged.compareAndSet(false, true) || result == null) return;
+                try {
+                    Integer actual = result.get(
+                            CaptureResult.SCALER_ROTATE_AND_CROP);
+                    QuietLog.log("VIDEO", "rotate_crop_result",
+                            "actual=" + (actual == null ? -1 : actual)
+                                    + " canonical=1");
+                } catch (Exception ignored) {}
+            }
+        };
     }
 
     private Range<Integer> choose30FpsRange(String cameraId) {
@@ -776,21 +889,31 @@ public final class VideoEngine implements AutoCloseable {
         boolean front = facing != null
                 && facing == CameraCharacteristics.LENS_FACING_FRONT;
 
-        int result = RotationLabConfig.computeTransmitRotation(
-                context,
-                s,
-                front,
-                display,
-                physicalOrientationDegrees,
-                physicalOrientationKnown);
+        int result;
+        String formula;
+        if (canonicalRotationActive()) {
+            result = RotationLabConfig.computeCanonicalClockwiseRotation(
+                    s, front, display);
+            formula = "Canonical clockwise";
+        } else {
+            result = RotationLabConfig.computeTransmitRotation(
+                    context,
+                    s,
+                    front,
+                    display,
+                    physicalOrientationDegrees,
+                    physicalOrientationKnown);
+            formula = RotationLabConfig.txFormulaLabel(
+                    RotationLabConfig.txFormula(context));
+        }
         QuietLog.log("VIDEO", "surface_rotation_calc",
                 "sensor=" + s
                         + " display=" + display
                         + " facing=" + (front ? "front" : "back")
-                        + " formula=" + RotationLabConfig.txFormulaLabel(
-                            RotationLabConfig.txFormula(context))
+                        + " formula=" + formula
                         + " source=" + RotationLabConfig.sourceLabel(
                             RotationLabConfig.rotationSource(context))
+                        + " canonical=" + (canonicalRotationActive() ? 1 : 0)
                         + " result=" + result);
         return result;
     }
@@ -969,30 +1092,23 @@ public final class VideoEngine implements AutoCloseable {
             return;
         }
         remoteReportedRotationDegrees = RotationLabConfig.normalize(degrees);
-        remoteRotationDegrees = RotationLabConfig.resolveRemoteRotation(
-                context, remoteReportedRotationDegrees);
+        remoteRotationDegrees = canonicalRotationActive()
+                ? remoteReportedRotationDegrees
+                : RotationLabConfig.resolveRemoteRotation(
+                        context, remoteReportedRotationDegrees);
         SessionBus.videoRotation(remoteRotationDegrees);
     }
 
     public void applyRotationLabConfig() {
-        h264.setRotationMetadataMode(
-                RotationLabConfig.sendFrameRotation(context),
-                RotationLabConfig.acceptFrameRotation(context));
+        updateRotationProtocolState(true);
         h264.setLocalFrameRotation(lastCaptureRotation);
 
-        // Re-evaluate a previously received control/frame rotation through the
-        // newly selected receiver inversion/offset immediately.
-        if (remoteReportedRotationDegrees >= 0) {
-            remoteRotationDegrees = RotationLabConfig.resolveRemoteRotation(
-                    context, remoteReportedRotationDegrees);
-            SessionBus.videoRotation(remoteRotationDegrees);
-        }
-
-        // Force the local TextureView to re-evaluate its transform even when
-        // the calculated stream rotation number itself did not change.
+        // Force local + remote TextureViews to re-evaluate their transforms
+        // even when the numeric stream rotation did not change.
         SessionBus.localVideoRotation(lastCaptureRotation);
         refreshOrientation();
 
+        boolean after = canonicalRotationActive();
         QuietLog.log("VIDEO", "rotation_lab_apply",
                 "enabled=" + (RotationLabConfig.enabled(context) ? 1 : 0)
                         + " tx=" + RotationLabConfig.txFormulaLabel(
@@ -1001,8 +1117,13 @@ public final class VideoEngine implements AutoCloseable {
                             RotationLabConfig.rotationSource(context))
                         + " preview=" + RotationLabConfig.previewLabel(
                             RotationLabConfig.localPreviewMode(context))
-                        + " frame_tx=" + (RotationLabConfig.sendFrameRotation(context) ? 1 : 0)
-                        + " frame_rx=" + (RotationLabConfig.acceptFrameRotation(context) ? 1 : 0)
+                        + " canonical=" + (after ? 1 : 0)
+                        + " legacy_override="
+                        + (RotationLabConfig.forceLegacyPipeline(context) ? 1 : 0)
+                        + " frame_tx="
+                        + ((after || RotationLabConfig.sendFrameRotation(context)) ? 1 : 0)
+                        + " frame_rx="
+                        + ((after || RotationLabConfig.acceptFrameRotation(context)) ? 1 : 0)
                         + " force_jpeg=" + (RotationLabConfig.forceJpeg(context) ? 1 : 0));
     }
 
