@@ -1,4 +1,4 @@
-# QuietLink 0.3.50
+# QuietLink 0.3.51
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,17 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.51 developer video rotation lab
+- Adds **Video rotation lab** to the hidden 🛠 developer menu, including during an active real session.
+- The normal production behavior is unchanged until a developer setting/preset is selected; **Reset production defaults** restores v0.3.50 behavior.
+- Live H.264 sender formulas: current QuietLink, Android relative-rotation formula, WebRTC/JPEG-style formula, and sensor-only.
+- Rotation source can be the Android display rotation or the physical orientation sensor; the physical-sensor test deliberately continues through Android rotation lock.
+- Local H.264 TextureView strategies: current stream rotation, Android display-only compensation, no extra rotation, or inverse stream rotation.
+- Front-camera local mirroring can be toggled independently.
+- H.264 can optionally attach quarter-turn rotation metadata to each encoded access unit using previously unused packet flag bits; older receivers ignore those bits, while v0.3.51 can optionally prefer the frame-bound value over asynchronous `VIDEO_ROT`.
+- Manual diagnostics include forced sender 0/90/180/270°, remote direct/inverse handling, +0/+90/+180/+270° receiver offset, and a live **Force JPEG** comparison.
+- Rotation-lab logs contain only categorical mode selections and degree values, never image/video contents.
 
 ## 0.3.50 older-phone updater signer compatibility
 - Fixes a false **Stage: package / Reason: signature_mismatch** seen again on the older Android phone after the v2 signing-key rotation.

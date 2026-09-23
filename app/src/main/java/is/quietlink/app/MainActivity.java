@@ -842,6 +842,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             String[] options = {
                     "Live diagnostics",
                     "H.264 codec info",
+                    "Video rotation lab",
                     "Report log to GitHub",
                     "Export privacy-safe log",
                     "Clear diagnostic log"
@@ -851,8 +852,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     .setItems(options, (dialog, which) -> {
                         if (which == 0) showReliabilityDiagnostics();
                         else if (which == 1) showH264CodecInfo();
-                        else if (which == 2) reportDiagnosticLogToGitHub();
-                        else if (which == 3) exportDiagnosticLog();
+                        else if (which == 2) showVideoRotationLab();
+                        else if (which == 3) reportDiagnosticLogToGitHub();
+                        else if (which == 4) exportDiagnosticLog();
                         else {
                             QuietLog.clear(this);
                             Toast.makeText(this, "Diagnostic log cleared", Toast.LENGTH_SHORT).show();
@@ -870,6 +872,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 "Dummy Baby • Baby Station",
                 "Dummy Sleeping Baby • Parent Station",
                 "H.264 codec info",
+                "Video rotation lab",
                 "Live diagnostics",
                 "Report log to GitHub",
                 "Online rendezvous test setup",
@@ -886,16 +889,227 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     else if (which == 3) startDummySession(SessionService.MODE_BABY, true, false);
                     else if (which == 4) startDummySession(SessionService.MODE_BABY, false, true);
                     else if (which == 5) showH264CodecInfo();
-                    else if (which == 6) showReliabilityDiagnostics();
-                    else if (which == 7) reportDiagnosticLogToGitHub();
-                    else if (which == 8) showOnlineRendezvousTestSetup();
-                    else if (which == 9) exportDiagnosticLog();
+                    else if (which == 6) showVideoRotationLab();
+                    else if (which == 7) showReliabilityDiagnostics();
+                    else if (which == 8) reportDiagnosticLogToGitHub();
+                    else if (which == 9) showOnlineRendezvousTestSetup();
+                    else if (which == 10) exportDiagnosticLog();
                     else {
                         QuietLog.clear(this);
                         Toast.makeText(this, "Diagnostic log cleared", Toast.LENGTH_SHORT).show();
                     }
                 })
                 .setNegativeButton("Close", null)
+                .show();
+    }
+
+    private interface RotationLabChoice {
+        void apply(int index);
+    }
+
+    private void showVideoRotationLab() {
+        if (!devUnlocked) return;
+
+        String[] options = {
+                "Preset • " + (RotationLabConfig.enabled(this) ? "CUSTOM/TEST" : "PRODUCTION"),
+                "H.264 sender formula • "
+                        + RotationLabConfig.txFormulaLabel(RotationLabConfig.txFormula(this)),
+                "Rotation source • "
+                        + RotationLabConfig.sourceLabel(RotationLabConfig.rotationSource(this)),
+                "Local preview transform • "
+                        + RotationLabConfig.previewLabel(RotationLabConfig.localPreviewMode(this)),
+                "Local front mirror • "
+                        + (RotationLabConfig.mirrorLocalPreview(this) ? "ON" : "OFF"),
+                "Per-frame H.264 rotation TX • "
+                        + (RotationLabConfig.sendFrameRotation(this) ? "ON" : "OFF"),
+                "Per-frame H.264 rotation RX • "
+                        + (RotationLabConfig.acceptFrameRotation(this) ? "ON" : "OFF"),
+                "Force sender rotation • "
+                        + RotationLabConfig.forcedLabel(RotationLabConfig.forcedTxRotation(this)),
+                "Remote rotation direction • "
+                        + RotationLabConfig.remoteModeLabel(RotationLabConfig.remoteMode(this)),
+                "Remote rotation offset • +" + RotationLabConfig.remoteOffset(this) + "°",
+                "Video codec test • "
+                        + (RotationLabConfig.forceJpeg(this) ? "FORCE JPEG" : "AUTO / H.264"),
+                "Show test instructions",
+                "Reset production defaults"
+        };
+
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Video rotation lab")
+                .setMessage(RotationLabConfig.summary(this)
+                        + "\n\nStored only on this phone. Settings are developer-only and "
+                        + "can be changed during a live Video/Baby call.")
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) showRotationPresetPicker();
+                    else if (which == 1) showRotationLabChoice(
+                            "H.264 sender formula",
+                            new String[] {
+                                    "Current QuietLink • sensor − display for both cameras",
+                                    "Android relative • front sensor−display / back sensor+display",
+                                    "WebRTC/JPEG style • front sensor+display / back sensor−display",
+                                    "Sensor only • ignore device rotation"
+                            },
+                            RotationLabConfig.txFormula(this),
+                            index -> RotationLabConfig.setTxFormula(this, index));
+                    else if (which == 2) showRotationLabChoice(
+                            "Device rotation source",
+                            new String[] {
+                                    "Display rotation • production behavior",
+                                    "Physical orientation sensor • ignores rotation lock for testing"
+                            },
+                            RotationLabConfig.rotationSource(this),
+                            index -> RotationLabConfig.setRotationSource(this, index));
+                    else if (which == 3) showRotationLabChoice(
+                            "Local TextureView transform",
+                            new String[] {
+                                    "Stream rotation • current QuietLink behavior",
+                                    "Display-only • Android TextureView/Viewfinder-style",
+                                    "No extra rotation",
+                                    "Inverse stream rotation"
+                            },
+                            RotationLabConfig.localPreviewMode(this),
+                            index -> RotationLabConfig.setLocalPreviewMode(this, index));
+                    else if (which == 4) {
+                        RotationLabConfig.setMirrorLocalPreview(
+                                this, !RotationLabConfig.mirrorLocalPreview(this));
+                        applyRotationLabNow();
+                        showVideoRotationLab();
+                    } else if (which == 5) {
+                        RotationLabConfig.setSendFrameRotation(
+                                this, !RotationLabConfig.sendFrameRotation(this));
+                        applyRotationLabNow();
+                        showVideoRotationLab();
+                    } else if (which == 6) {
+                        RotationLabConfig.setAcceptFrameRotation(
+                                this, !RotationLabConfig.acceptFrameRotation(this));
+                        applyRotationLabNow();
+                        showVideoRotationLab();
+                    } else if (which == 7) showRotationLabChoice(
+                            "Force H.264 sender rotation",
+                            new String[] {"Auto", "0°", "90°", "180°", "270°"},
+                            forcedRotationChoiceIndex(),
+                            index -> RotationLabConfig.setForcedTxRotation(
+                                    this, index == 0 ? -1 : (index - 1) * 90));
+                    else if (which == 8) showRotationLabChoice(
+                            "Remote rotation direction",
+                            new String[] {"Direct", "Inverse • 360° − reported"},
+                            RotationLabConfig.remoteMode(this),
+                            index -> RotationLabConfig.setRemoteMode(this, index));
+                    else if (which == 9) showRotationLabChoice(
+                            "Remote rotation offset",
+                            new String[] {"+0°", "+90°", "+180°", "+270°"},
+                            RotationLabConfig.remoteOffset(this) / 90,
+                            index -> RotationLabConfig.setRemoteOffset(this, index * 90));
+                    else if (which == 10) {
+                        RotationLabConfig.setForceJpeg(
+                                this, !RotationLabConfig.forceJpeg(this));
+                        applyRotationLabNow();
+                        showVideoRotationLab();
+                    } else if (which == 11) {
+                        showRotationLabInstructions();
+                    } else {
+                        RotationLabConfig.resetProduction(this);
+                        applyRotationLabNow();
+                        Toast.makeText(this,
+                                "Rotation lab reset to production behavior",
+                                Toast.LENGTH_SHORT).show();
+                        showVideoRotationLab();
+                    }
+                })
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
+    private void showRotationPresetPicker() {
+        String[] presets = {
+                "Production v0.3.50 baseline",
+                "Android official relative + TextureView display-only",
+                "WebRTC-style + per-frame rotation metadata",
+                "Android relative + per-frame rotation metadata"
+        };
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Rotation lab preset")
+                .setItems(presets, (dialog, which) -> {
+                    RotationLabConfig.applyPreset(this, which);
+                    applyRotationLabNow();
+                    Toast.makeText(this, "Applied • " + presets[which],
+                            Toast.LENGTH_SHORT).show();
+                    showVideoRotationLab();
+                })
+                .setNegativeButton("Back", (dialog, which) -> showVideoRotationLab())
+                .show();
+    }
+
+    private void showRotationLabChoice(String title,
+                                       String[] options,
+                                       int checked,
+                                       RotationLabChoice choice) {
+        int safeChecked = Math.max(0, Math.min(options.length - 1, checked));
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(title)
+                .setSingleChoiceItems(options, safeChecked, (dialog, which) -> {
+                    try { choice.apply(which); } catch (Exception ignored) {}
+                    dialog.dismiss();
+                    applyRotationLabNow();
+                    showVideoRotationLab();
+                })
+                .setNegativeButton("Back", (dialog, which) -> showVideoRotationLab())
+                .show();
+    }
+
+    private int forcedRotationChoiceIndex() {
+        int forced = RotationLabConfig.forcedTxRotation(this);
+        return forced < 0 ? 0 : (forced / 90) + 1;
+    }
+
+    private void applyRotationLabNow() {
+        QuietLog.log("UI", "rotation_lab_change",
+                "enabled=" + (RotationLabConfig.enabled(this) ? 1 : 0)
+                        + " tx=" + RotationLabConfig.txFormula(this)
+                        + " preview=" + RotationLabConfig.localPreviewMode(this)
+                        + " remote_mode=" + RotationLabConfig.remoteMode(this)
+                        + " remote_offset=" + RotationLabConfig.remoteOffset(this)
+                        + " frame_tx=" + (RotationLabConfig.sendFrameRotation(this) ? 1 : 0)
+                        + " frame_rx=" + (RotationLabConfig.acceptFrameRotation(this) ? 1 : 0)
+                        + " jpeg=" + (RotationLabConfig.forceJpeg(this) ? 1 : 0));
+
+        if (SessionBus.active && !devDummySession) {
+            try {
+                startService(new Intent(this, SessionService.class)
+                        .setAction(SessionService.ACTION_APPLY_ROTATION_LAB));
+            } catch (Exception ignored) {}
+        }
+
+        if (remoteVideoTexture != null) {
+            remoteVideoTexture.post(() ->
+                    applyVideoTextureTransform(remoteVideoTexture,
+                            SessionBus.remoteVideoRotation, false, false));
+        }
+        if (localVideoTexture != null) {
+            localVideoTexture.post(() ->
+                    applyVideoTextureTransform(localVideoTexture,
+                            SessionBus.localVideoRotation, true, true));
+        }
+        updateH264PictureInPictureAspect();
+    }
+
+    private void showRotationLabInstructions() {
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Rotation test")
+                .setMessage(
+                        "Fastest way to identify the correct combination:\n\n"
+                        + "1. Put both phones in a Video call and keep this developer menu open on the phone you are changing.\n"
+                        + "2. Start with PRODUCTION, then try ANDROID OFFICIAL and WEBRTC presets.\n"
+                        + "3. Test front camera in portrait, landscape-left and landscape-right.\n"
+                        + "4. Repeat with back camera.\n"
+                        + "5. If only the self-preview is wrong, change Local preview transform/mirror.\n"
+                        + "6. If only the other phone is wrong, change sender formula first, then remote direction/offset.\n"
+                        + "7. Turn per-frame TX+RX on together to test frame-bound rotation instead of VIDEO_ROT timing.\n"
+                        + "8. FORCE JPEG compares the old JPEG/EXIF path against H.264.\n\n"
+                        + "Tell me which preset/settings work for each camera and orientation. "
+                        + "The diagnostic log records only the chosen mode and rotation degrees—never video contents.")
+                .setPositiveButton("OK", (dialog, which) -> showVideoRotationLab())
                 .show();
     }
 
@@ -3176,13 +3390,23 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         if (width <= 0 || height <= 0) return;
 
         int r = ((rotation % 360) + 360) % 360;
-        // The VideoEngine now reports Surface-target rotation separately from
-        // JPEG metadata. Use that Surface rotation directly, and mirror only
-        // the local presentation after it is upright.
+        // Production defaults preserve the existing behavior. When the hidden
+        // rotation lab is enabled, the local TextureView can be decoupled from
+        // transmitted frame rotation so Android's display-only strategy can be
+        // tested independently.
         int drawRotation = r;
+        boolean drawMirror = mirror;
+        if (mirror && RotationLabConfig.enabled(this)) {
+            drawRotation = RotationLabConfig.resolveLocalPreviewRotation(this, r);
+            drawMirror = RotationLabConfig.mirrorLocalPreview(this)
+                    && SessionBus.localCameraFront;
+        }
         if (mirror) {
             QuietLog.log("UI", "local_preview_transform",
-                    "view=" + width + "x" + height + " rotation=" + drawRotation);
+                    "view=" + width + "x" + height
+                            + " rotation=" + drawRotation
+                            + " mirror=" + (drawMirror ? 1 : 0)
+                            + " front=" + (SessionBus.localCameraFront ? 1 : 0));
         }
         boolean quarterTurn = drawRotation == 90 || drawRotation == 270;
         float effectiveSourceWidth = quarterTurn ? H264Codec.HEIGHT : H264Codec.WIDTH;
@@ -3201,7 +3425,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         android.graphics.Matrix matrix = new android.graphics.Matrix();
         matrix.setScale(preRotateWidth / width, preRotateHeight / height, cx, cy);
         matrix.postRotate(drawRotation, cx, cy);
-        if (mirror) matrix.postScale(-1f, 1f, cx, cy);
+        if (drawMirror) matrix.postScale(-1f, 1f, cx, cy);
 
         view.setRotation(0f);
         view.setScaleX(1f);

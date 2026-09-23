@@ -1,7 +1,7 @@
 # QuietLink milestones
 
 Updated: 2026-09-23  
-Current release: **v0.3.50**  
+Current release: **v0.3.51**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -45,6 +45,8 @@ Source of truth: **GitHub main**
    - ✅ Legacy APK/source artifacts purged
    - ✅ Post-purge full-history audit: zero credential-pattern findings
    - ✅ v0.3.50 older-OEM rotated-v2 signer history-shape compatibility fix
+   - ✅ v0.3.51 developer video rotation lab with live formula/preview/metadata/manual correction matrix
+   - ⏳ Human rotation matrix: identify correct front/back portrait/landscape settings on both phones
 
 7. ⏳ Online P2P + rendezvous
    - ✅ Online availability/status dot with helpful local-only fallback
@@ -110,7 +112,7 @@ Source of truth: **GitHub main**
 
 ## Current truth
 
-v0.3.48 production rendezvous matching is user-validated. v0.3.49 added the first actual encrypted internet session path: QL5 control/chat through a bounded opaque relay plus direct encrypted UDP media. v0.3.50 carries the same internet-session work plus an older-phone updater signer-compatibility fix. Permanent-Pi deployment and a real two-phone Voice/audio test remain the next networking checkpoint.
+v0.3.48 production rendezvous matching is user-validated. v0.3.49 added the first encrypted internet session path and v0.3.50 fixed the older-phone updater signer false-positive. v0.3.51 adds a developer-only video rotation lab so the remaining cross-device orientation issue can be measured before selecting a new production formula. The permanent-Pi/internet Voice test remains queued immediately after the orientation checkpoint.
 
 The Online status dot remains conservative/red while `onlineCallsAvailable=false`, but the published status document now supplies the permanent production `rendezvousUrl` for automatic signaling.
 

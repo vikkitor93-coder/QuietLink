@@ -232,3 +232,17 @@
 188. Android installer lineage guard: after QuietLink's pre-install signer check passes, Android must still present a normal in-place Update and preserve existing app data.
 189. Signer diagnostic privacy: exported diagnostics may include only categorical flags/counts such as current-v2 yes/no, legacy-source yes/no, and history counts; certificate bytes/digests must remain absent.
 
+190. Rotation lab access: unlock developer mode by tapping the About QuietLink title three times, open 🛠, and verify **Video rotation lab** is available both idle and during a real Video/Baby session.
+191. Production baseline: select **Production v0.3.50 baseline** / Reset production defaults and verify behavior matches v0.3.50.
+192. Sender formula matrix: with H.264 active, test Current QuietLink, Android relative, WebRTC/JPEG-style, and Sensor-only using front and back cameras in portrait, landscape-left, landscape-right, and (where supported) 180°.
+193. TextureView matrix: independently test Stream rotation, Display-only, No extra rotation, and Inverse stream rotation. Confirm this changes only the local H.264 self-preview transform.
+194. Mirror isolation: with the front camera, toggle Local front mirror and verify it does not alter transmitted remote orientation; repeat with the back camera and verify the dev mirror gate uses the reported local facing.
+195. Rotation source matrix: compare Display rotation with Physical orientation sensor. Physical-sensor mode may rotate through system rotation lock by design; Reset production must restore lock-respecting behavior.
+196. Per-frame H.264 metadata: enable TX on the sending v0.3.51 phone and RX on the receiving v0.3.51 phone. Rotate between portrait/landscape while video is flowing and verify receiver orientation follows frame-bound quarter-turn metadata without requiring a reconnect.
+197. Metadata backward compatibility: with per-frame TX enabled toward a pre-v0.3.51 H.264 receiver, video packets must remain parseable because the header size/version is unchanged and unknown rotation flag bits are ignored.
+198. Manual sender override: test Auto, 0°, 90°, 180°, and 270° and verify each produces the corresponding receiver orientation signal.
+199. Manual receiver correction: test Direct vs Inverse and +0/+90/+180/+270° offsets without reconnecting.
+200. Codec comparison: toggle Force JPEG during a connected video call and verify both peers renegotiate to JPEG; toggle it back off and verify the H.264 capability request/response can restore hardware H.264 when supported.
+201. Privacy regression: exported logs may record formula labels, front/back, display/sensor/result quarter-turns, and lab toggle state, but must contain no frame contents, screenshots, camera images, public network endpoints, room tokens, or codes.
+202. Orientation selection report: record which preset/settings are correct for each phone/camera/posture before changing production defaults.
+

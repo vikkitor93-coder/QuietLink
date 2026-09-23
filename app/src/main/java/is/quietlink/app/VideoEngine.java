@@ -99,6 +99,7 @@ public final class VideoEngine implements AutoCloseable {
     private volatile int physicalOrientationDegrees = 0;
     private volatile boolean physicalOrientationKnown = false;
     private volatile int remoteRotationDegrees = -1;
+    private volatile int remoteReportedRotationDegrees = -1;
     private volatile int lastCaptureRotation = 0;
     private volatile int lastReportedRotation = -1;
     private volatile long lastRotationReportAtMs = 0;
@@ -148,6 +149,12 @@ public final class VideoEngine implements AutoCloseable {
                 SessionBus.videoFrameRendered();
             }
 
+            @Override public void onFrameRotation(int degrees) {
+                if (RotationLabConfig.acceptFrameRotation(context)) {
+                    setRemoteRotation(degrees);
+                }
+            }
+
             @Override public void onKeyFrameNeeded() {
                 KeyFrameRequester requester = keyFrameRequester;
                 if (requester != null) {
@@ -188,10 +195,13 @@ public final class VideoEngine implements AutoCloseable {
 
         orientationListener = new OrientationEventListener(context) {
             @Override public void onOrientationChanged(int orientation) {
-                // Respect Android rotation lock. Physical sensor movement must not
-                // rotate either the transmitted picture or the small self preview
-                // while the user has locked the display orientation.
-                if (!isAutoRotateEnabled()) {
+                boolean physicalExperiment = RotationLabConfig.enabled(context)
+                        && RotationLabConfig.rotationSource(context)
+                        == RotationLabConfig.SOURCE_PHYSICAL_SENSOR;
+                // Production behavior still respects Android rotation lock.
+                // The developer physical-sensor experiment deliberately keeps
+                // reading the sensor even while rotation lock is on.
+                if (!physicalExperiment && !isAutoRotateEnabled()) {
                     physicalOrientationKnown = false;
                     return;
                 }
@@ -210,6 +220,7 @@ public final class VideoEngine implements AutoCloseable {
         lastRemoteJpegFrameElapsedMs = 0L;
         lastRemoteRecoveryRequestMs = 0L;
         QuietLog.log("VIDEO", "engine_start", "send=" + (sendVideo ? 1 : 0));
+        applyRotationLabConfig();
         refreshOrientation();
         startVideoHealthLoop();
         if (sendVideo) startCamera(currentFacing);
@@ -247,7 +258,10 @@ public final class VideoEngine implements AutoCloseable {
     }
 
     public void setH264Enabled(boolean enabled) {
-        boolean use = enabled && h264Capability != null && h264Capability.usable();
+        boolean use = enabled
+                && h264Capability != null
+                && h264Capability.usable()
+                && !RotationLabConfig.forceJpeg(context);
         if (h264Enabled == use) return;
 
         h264Enabled = use;
@@ -431,6 +445,8 @@ public final class VideoEngine implements AutoCloseable {
     private void startCamera(int facing) {
         if (!running.get() || !sendingEnabled) return;
         currentFacing = facing;
+        SessionBus.localCameraFacing(
+                facing == CameraCharacteristics.LENS_FACING_FRONT);
 
         Handler handler;
         synchronized (this) {
@@ -695,6 +711,7 @@ public final class VideoEngine implements AutoCloseable {
                         s.setRepeatingRequest(record.build(), null, cameraHandler);
                         int rotation = surfaceStreamOrientation(currentCameraId);
                         lastCaptureRotation = rotation;
+                        h264.setLocalFrameRotation(rotation);
                         reportRotation(rotation);
                         SessionBus.status("Video • H.264 "
                                 + h264.currentWidth() + "×" + h264.currentHeight()
@@ -743,6 +760,7 @@ public final class VideoEngine implements AutoCloseable {
             try {
                 int rotation = surfaceStreamOrientation(currentCameraId);
                 lastCaptureRotation = rotation;
+                h264.setLocalFrameRotation(rotation);
                 reportRotation(rotation);
             } catch (Exception ignored) {}
             scheduleH264Orientation();
@@ -755,16 +773,24 @@ public final class VideoEngine implements AutoCloseable {
         Integer sensor = ch.get(CameraCharacteristics.SENSOR_ORIENTATION);
         Integer facing = ch.get(CameraCharacteristics.LENS_FACING);
         int s = sensor == null ? 0 : sensor;
+        boolean front = facing != null
+                && facing == CameraCharacteristics.LENS_FACING_FRONT;
 
-        // Camera2 Surface targets are not JPEG selfie images. Keep the encoded
-        // H.264 stream in sensor/display coordinates and mirror only the local
-        // presentation. Using the JPEG front-camera "+" formula here creates
-        // a 180-degree landscape error on common 90/270-degree front sensors.
-        int result = (s - display + 360) % 360;
+        int result = RotationLabConfig.computeTransmitRotation(
+                context,
+                s,
+                front,
+                display,
+                physicalOrientationDegrees,
+                physicalOrientationKnown);
         QuietLog.log("VIDEO", "surface_rotation_calc",
-                "sensor=" + s + " display=" + display
-                        + " facing=" + ((facing != null
-                            && facing == CameraCharacteristics.LENS_FACING_FRONT) ? "front" : "back")
+                "sensor=" + s
+                        + " display=" + display
+                        + " facing=" + (front ? "front" : "back")
+                        + " formula=" + RotationLabConfig.txFormulaLabel(
+                            RotationLabConfig.txFormula(context))
+                        + " source=" + RotationLabConfig.sourceLabel(
+                            RotationLabConfig.rotationSource(context))
                         + " result=" + result);
         return result;
     }
@@ -938,11 +964,46 @@ public final class VideoEngine implements AutoCloseable {
 
     public void setRemoteRotation(int degrees) {
         if (degrees < 0) {
+            remoteReportedRotationDegrees = -1;
             remoteRotationDegrees = -1;
             return;
         }
-        remoteRotationDegrees = ((degrees % 360) + 360) % 360;
+        remoteReportedRotationDegrees = RotationLabConfig.normalize(degrees);
+        remoteRotationDegrees = RotationLabConfig.resolveRemoteRotation(
+                context, remoteReportedRotationDegrees);
         SessionBus.videoRotation(remoteRotationDegrees);
+    }
+
+    public void applyRotationLabConfig() {
+        h264.setRotationMetadataMode(
+                RotationLabConfig.sendFrameRotation(context),
+                RotationLabConfig.acceptFrameRotation(context));
+        h264.setLocalFrameRotation(lastCaptureRotation);
+
+        // Re-evaluate a previously received control/frame rotation through the
+        // newly selected receiver inversion/offset immediately.
+        if (remoteReportedRotationDegrees >= 0) {
+            remoteRotationDegrees = RotationLabConfig.resolveRemoteRotation(
+                    context, remoteReportedRotationDegrees);
+            SessionBus.videoRotation(remoteRotationDegrees);
+        }
+
+        // Force the local TextureView to re-evaluate its transform even when
+        // the calculated stream rotation number itself did not change.
+        SessionBus.localVideoRotation(lastCaptureRotation);
+        refreshOrientation();
+
+        QuietLog.log("VIDEO", "rotation_lab_apply",
+                "enabled=" + (RotationLabConfig.enabled(context) ? 1 : 0)
+                        + " tx=" + RotationLabConfig.txFormulaLabel(
+                            RotationLabConfig.txFormula(context))
+                        + " source=" + RotationLabConfig.sourceLabel(
+                            RotationLabConfig.rotationSource(context))
+                        + " preview=" + RotationLabConfig.previewLabel(
+                            RotationLabConfig.localPreviewMode(context))
+                        + " frame_tx=" + (RotationLabConfig.sendFrameRotation(context) ? 1 : 0)
+                        + " frame_rx=" + (RotationLabConfig.acceptFrameRotation(context) ? 1 : 0)
+                        + " force_jpeg=" + (RotationLabConfig.forceJpeg(context) ? 1 : 0));
     }
 
     public void refreshAfterDisplayWake() {
@@ -1043,7 +1104,10 @@ public final class VideoEngine implements AutoCloseable {
         lastRotationReportAtMs = 0;
         if (listener == null || !listener.canDetectOrientation()) return;
         try { listener.disable(); } catch (Exception ignored) {}
-        if (isAutoRotateEnabled()) {
+        boolean physicalExperiment = RotationLabConfig.enabled(context)
+                && RotationLabConfig.rotationSource(context)
+                == RotationLabConfig.SOURCE_PHYSICAL_SENSOR;
+        if (isAutoRotateEnabled() || physicalExperiment) {
             try { listener.enable(); } catch (Exception ignored) {}
         }
     }
@@ -1082,6 +1146,7 @@ public final class VideoEngine implements AutoCloseable {
         lastReportedRotation = normalized;
         lastRotationReportAtMs = now;
         SessionBus.localVideoRotation(normalized);
+        h264.setLocalFrameRotation(normalized);
         QuietLog.log("VIDEO", "rotation_report", "degrees=" + normalized);
         RotationReporter reporter = rotationReporter;
         if (reporter != null) {

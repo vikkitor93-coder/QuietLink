@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicLong;
 final class H264VideoTransport implements AutoCloseable {
     interface Listener {
         void onFrameRendered();
+        void onFrameRotation(int degrees);
         void onKeyFrameNeeded();
         void onQualityTierRequested(int tier);
         void onFatal(String reason);
@@ -35,6 +36,11 @@ final class H264VideoTransport implements AutoCloseable {
     private static final int VERSION = 1;
     private static final int FLAG_CONFIG = 1;
     private static final int FLAG_KEYFRAME = 1 << 1;
+    // Optional rotation metadata lives in unused flag bits so v1 peers that do
+    // not know about it safely ignore it without changing the packet header.
+    private static final int FLAG_ROTATION_PRESENT = 1 << 2;
+    private static final int ROTATION_SHIFT = 3;
+    private static final int ROTATION_MASK = 0x18;
     private static final int HEADER_BYTES = 22;
     private static final int CHUNK_BYTES = 1380;
     private static final int MAX_CHUNKS = 768;
@@ -90,6 +96,9 @@ final class H264VideoTransport implements AutoCloseable {
     private volatile long lastRenderedFrameMs = 0L;
     private volatile long encoderStartedMs = 0L;
     private volatile long decoderStartedMs = 0L;
+    private volatile int localFrameRotationDegrees = 0;
+    private volatile boolean sendFrameRotationMetadata = false;
+    private volatile boolean acceptFrameRotationMetadata = false;
 
     H264VideoTransport(MediaTransport transport,
                        H264Codec.Capability capability,
@@ -132,6 +141,15 @@ final class H264VideoTransport implements AutoCloseable {
 
     boolean isEnabled() {
         return enabled;
+    }
+
+    void setRotationMetadataMode(boolean send, boolean accept) {
+        sendFrameRotationMetadata = send;
+        acceptFrameRotationMetadata = accept;
+    }
+
+    void setLocalFrameRotation(int degrees) {
+        localFrameRotationDegrees = normalizeRotation(degrees);
     }
 
     synchronized Surface startEncoder() throws Exception {
@@ -257,6 +275,13 @@ final class H264VideoTransport implements AutoCloseable {
                 if ((a.flags & FLAG_CONFIG) != 0) {
                     acceptConfig(data);
                 } else {
+                    if (acceptFrameRotationMetadata
+                            && (a.flags & FLAG_ROTATION_PRESENT) != 0
+                            && listener != null) {
+                        int code = (a.flags & ROTATION_MASK) >> ROTATION_SHIFT;
+                        try { listener.onFrameRotation((code & 0x3) * 90); }
+                        catch (Exception ignored) {}
+                    }
                     H264Codec.Decoder d;
                     synchronized (this) { d = decoder; }
                     if (d != null) {
@@ -282,6 +307,13 @@ final class H264VideoTransport implements AutoCloseable {
 
     private void sendBlob(byte[] data, long ptsUs, int flags) {
         if (!enabled || data == null || data.length == 0) return;
+
+        int wireFlags = flags;
+        if ((flags & FLAG_CONFIG) == 0 && sendFrameRotationMetadata) {
+            int code = normalizeRotation(localFrameRotationDegrees) / 90;
+            wireFlags |= FLAG_ROTATION_PRESENT;
+            wireFlags |= (code & 0x3) << ROTATION_SHIFT;
+        }
 
         int queued = transport.videoQueueDepth();
         boolean important = (flags & (FLAG_CONFIG | FLAG_KEYFRAME)) != 0;
@@ -312,7 +344,7 @@ final class H264VideoTransport implements AutoCloseable {
             ByteBuffer packet = ByteBuffer.allocate(HEADER_BYTES + n);
             packet.putInt(MAGIC);
             packet.put((byte) VERSION);
-            packet.put((byte) flags);
+            packet.put((byte) wireFlags);
             packet.putShort((short) i);
             packet.putShort((short) count);
             packet.putInt(unitId);
@@ -516,6 +548,14 @@ final class H264VideoTransport implements AutoCloseable {
     private static int tierMinBitrate(int tier) { return TIER_MIN_BITRATE[clampTier(tier)]; }
     private static int tierMaxBitrate(int tier) { return TIER_MAX_BITRATE[clampTier(tier)]; }
     private static int clampTier(int tier) { return Math.max(TIER_HD, Math.min(MAX_TIER, tier)); }
+
+    private static int normalizeRotation(int degrees) {
+        int n = ((degrees % 360) + 360) % 360;
+        if (n < 45 || n >= 315) return 0;
+        if (n < 135) return 90;
+        if (n < 225) return 180;
+        return 270;
+    }
 
     int qualityTier() { return qualityTier; }
     int currentWidth() { return tierWidth(qualityTier); }

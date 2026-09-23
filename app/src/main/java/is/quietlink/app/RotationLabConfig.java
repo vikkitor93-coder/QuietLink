@@ -1,0 +1,369 @@
+package is.quietlink.app;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.view.Surface;
+import android.view.WindowManager;
+
+/**
+ * Developer-only camera rotation experiments.
+ *
+ * Defaults intentionally reproduce the shipping v0.3.50 behavior. Nothing in
+ * this class changes production orientation unless the hidden developer mode
+ * explicitly enables/changes a setting.
+ */
+final class RotationLabConfig {
+    static final int TX_CURRENT = 0;
+    static final int TX_ANDROID_RELATIVE = 1;
+    static final int TX_WEBRTC_STYLE = 2;
+    static final int TX_SENSOR_ONLY = 3;
+
+    static final int SOURCE_DISPLAY = 0;
+    static final int SOURCE_PHYSICAL_SENSOR = 1;
+
+    static final int PREVIEW_STREAM_ROTATION = 0;
+    static final int PREVIEW_DISPLAY_ONLY = 1;
+    static final int PREVIEW_NONE = 2;
+    static final int PREVIEW_INVERSE_STREAM = 3;
+
+    static final int REMOTE_DIRECT = 0;
+    static final int REMOTE_INVERSE = 1;
+
+    static final int PRESET_PRODUCTION = 0;
+    static final int PRESET_ANDROID_TEXTUREVIEW = 1;
+    static final int PRESET_WEBRTC = 2;
+    static final int PRESET_ANDROID_FRAME_METADATA = 3;
+
+    private static final String PREF = "quietlink_rotation_lab";
+    private static final String KEY_ENABLED = "enabled";
+    private static final String KEY_TX_FORMULA = "tx_formula";
+    private static final String KEY_SOURCE = "rotation_source";
+    private static final String KEY_PREVIEW = "preview_mode";
+    private static final String KEY_MIRROR = "mirror_local";
+    private static final String KEY_SEND_FRAME_META = "send_frame_meta";
+    private static final String KEY_ACCEPT_FRAME_META = "accept_frame_meta";
+    private static final String KEY_FORCE_ROTATION = "force_rotation";
+    private static final String KEY_REMOTE_MODE = "remote_mode";
+    private static final String KEY_REMOTE_OFFSET = "remote_offset";
+    private static final String KEY_FORCE_JPEG = "force_jpeg";
+
+    private RotationLabConfig() {}
+
+    private static SharedPreferences prefs(Context context) {
+        return context.getSharedPreferences(PREF, Context.MODE_PRIVATE);
+    }
+
+    static boolean enabled(Context context) {
+        return prefs(context).getBoolean(KEY_ENABLED, false);
+    }
+
+    static void setEnabled(Context context, boolean value) {
+        prefs(context).edit().putBoolean(KEY_ENABLED, value).apply();
+    }
+
+    static int txFormula(Context context) {
+        return enabled(context)
+                ? prefs(context).getInt(KEY_TX_FORMULA, TX_CURRENT)
+                : TX_CURRENT;
+    }
+
+    static void setTxFormula(Context context, int value) {
+        prefs(context).edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putInt(KEY_TX_FORMULA, clamp(value, TX_CURRENT, TX_SENSOR_ONLY))
+                .apply();
+    }
+
+    static int rotationSource(Context context) {
+        return enabled(context)
+                ? prefs(context).getInt(KEY_SOURCE, SOURCE_DISPLAY)
+                : SOURCE_DISPLAY;
+    }
+
+    static void setRotationSource(Context context, int value) {
+        prefs(context).edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putInt(KEY_SOURCE, value == SOURCE_PHYSICAL_SENSOR
+                        ? SOURCE_PHYSICAL_SENSOR : SOURCE_DISPLAY)
+                .apply();
+    }
+
+    static int localPreviewMode(Context context) {
+        return enabled(context)
+                ? prefs(context).getInt(KEY_PREVIEW, PREVIEW_STREAM_ROTATION)
+                : PREVIEW_STREAM_ROTATION;
+    }
+
+    static void setLocalPreviewMode(Context context, int value) {
+        prefs(context).edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putInt(KEY_PREVIEW, clamp(value, PREVIEW_STREAM_ROTATION, PREVIEW_INVERSE_STREAM))
+                .apply();
+    }
+
+    static boolean mirrorLocalPreview(Context context) {
+        return !enabled(context)
+                || prefs(context).getBoolean(KEY_MIRROR, true);
+    }
+
+    static void setMirrorLocalPreview(Context context, boolean value) {
+        prefs(context).edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putBoolean(KEY_MIRROR, value)
+                .apply();
+    }
+
+    static boolean sendFrameRotation(Context context) {
+        return enabled(context)
+                && prefs(context).getBoolean(KEY_SEND_FRAME_META, false);
+    }
+
+    static void setSendFrameRotation(Context context, boolean value) {
+        prefs(context).edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putBoolean(KEY_SEND_FRAME_META, value)
+                .apply();
+    }
+
+    static boolean acceptFrameRotation(Context context) {
+        return enabled(context)
+                && prefs(context).getBoolean(KEY_ACCEPT_FRAME_META, false);
+    }
+
+    static void setAcceptFrameRotation(Context context, boolean value) {
+        prefs(context).edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putBoolean(KEY_ACCEPT_FRAME_META, value)
+                .apply();
+    }
+
+    static int forcedTxRotation(Context context) {
+        if (!enabled(context)) return -1;
+        int value = prefs(context).getInt(KEY_FORCE_ROTATION, -1);
+        return value == 0 || value == 90 || value == 180 || value == 270
+                ? value : -1;
+    }
+
+    static void setForcedTxRotation(Context context, int value) {
+        int safe = value == 0 || value == 90 || value == 180 || value == 270
+                ? value : -1;
+        prefs(context).edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putInt(KEY_FORCE_ROTATION, safe)
+                .apply();
+    }
+
+    static int remoteMode(Context context) {
+        return enabled(context)
+                ? prefs(context).getInt(KEY_REMOTE_MODE, REMOTE_DIRECT)
+                : REMOTE_DIRECT;
+    }
+
+    static void setRemoteMode(Context context, int value) {
+        prefs(context).edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putInt(KEY_REMOTE_MODE, value == REMOTE_INVERSE ? REMOTE_INVERSE : REMOTE_DIRECT)
+                .apply();
+    }
+
+    static int remoteOffset(Context context) {
+        if (!enabled(context)) return 0;
+        return normalizeQuarter(prefs(context).getInt(KEY_REMOTE_OFFSET, 0));
+    }
+
+    static void setRemoteOffset(Context context, int value) {
+        prefs(context).edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putInt(KEY_REMOTE_OFFSET, normalizeQuarter(value))
+                .apply();
+    }
+
+    static boolean forceJpeg(Context context) {
+        return enabled(context)
+                && prefs(context).getBoolean(KEY_FORCE_JPEG, false);
+    }
+
+    static void setForceJpeg(Context context, boolean value) {
+        prefs(context).edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putBoolean(KEY_FORCE_JPEG, value)
+                .apply();
+    }
+
+    static void resetProduction(Context context) {
+        prefs(context).edit().clear().apply();
+    }
+
+    static void applyPreset(Context context, int preset) {
+        SharedPreferences.Editor e = prefs(context).edit().clear();
+        if (preset == PRESET_PRODUCTION) {
+            e.apply();
+            return;
+        }
+
+        e.putBoolean(KEY_ENABLED, true)
+                .putInt(KEY_SOURCE, SOURCE_DISPLAY)
+                .putBoolean(KEY_MIRROR, true)
+                .putInt(KEY_FORCE_ROTATION, -1)
+                .putInt(KEY_REMOTE_MODE, REMOTE_DIRECT)
+                .putInt(KEY_REMOTE_OFFSET, 0)
+                .putBoolean(KEY_FORCE_JPEG, false);
+
+        if (preset == PRESET_ANDROID_TEXTUREVIEW) {
+            e.putInt(KEY_TX_FORMULA, TX_ANDROID_RELATIVE)
+                    .putInt(KEY_PREVIEW, PREVIEW_DISPLAY_ONLY)
+                    .putBoolean(KEY_SEND_FRAME_META, false)
+                    .putBoolean(KEY_ACCEPT_FRAME_META, false);
+        } else if (preset == PRESET_WEBRTC) {
+            e.putInt(KEY_TX_FORMULA, TX_WEBRTC_STYLE)
+                    .putInt(KEY_PREVIEW, PREVIEW_DISPLAY_ONLY)
+                    .putBoolean(KEY_SEND_FRAME_META, true)
+                    .putBoolean(KEY_ACCEPT_FRAME_META, true);
+        } else {
+            e.putInt(KEY_TX_FORMULA, TX_ANDROID_RELATIVE)
+                    .putInt(KEY_PREVIEW, PREVIEW_DISPLAY_ONLY)
+                    .putBoolean(KEY_SEND_FRAME_META, true)
+                    .putBoolean(KEY_ACCEPT_FRAME_META, true);
+        }
+        e.apply();
+    }
+
+    /**
+     * Compute rotation metadata for the encoded H.264 stream.
+     *
+     * physicalClockwise comes from OrientationEventListener. Android documents
+     * that value in the opposite convention from Display#getRotation, so it is
+     * negated before use when the physical-sensor experiment is selected.
+     */
+    static int computeTransmitRotation(Context context,
+                                       int sensorDegrees,
+                                       boolean frontFacing,
+                                       int displayDegrees,
+                                       int physicalClockwise,
+                                       boolean physicalKnown) {
+        int forced = forcedTxRotation(context);
+        if (forced >= 0) return forced;
+
+        int device = normalize(displayDegrees);
+        if (enabled(context)
+                && rotationSource(context) == SOURCE_PHYSICAL_SENSOR
+                && physicalKnown) {
+            device = normalize(360 - physicalClockwise);
+        }
+
+        int sensor = normalize(sensorDegrees);
+        switch (txFormula(context)) {
+            case TX_ANDROID_RELATIVE: {
+                int sign = frontFacing ? 1 : -1;
+                return normalize(sensor - device * sign);
+            }
+            case TX_WEBRTC_STYLE: {
+                int deviceForCamera = frontFacing ? device : normalize(360 - device);
+                return normalize(sensor + deviceForCamera);
+            }
+            case TX_SENSOR_ONLY:
+                return sensor;
+            case TX_CURRENT:
+            default:
+                return normalize(sensor - device);
+        }
+    }
+
+    static int resolveLocalPreviewRotation(Context context, int streamRotation) {
+        switch (localPreviewMode(context)) {
+            case PREVIEW_DISPLAY_ONLY:
+                // TextureView already compensates sensor orientation. Android's
+                // Camera2 sample applies the inverse display rotation.
+                return normalize(360 - displayRotationDegrees(context));
+            case PREVIEW_NONE:
+                return 0;
+            case PREVIEW_INVERSE_STREAM:
+                return normalize(360 - streamRotation);
+            case PREVIEW_STREAM_ROTATION:
+            default:
+                return normalize(streamRotation);
+        }
+    }
+
+    static int resolveRemoteRotation(Context context, int reportedRotation) {
+        int base = normalize(reportedRotation);
+        if (remoteMode(context) == REMOTE_INVERSE) base = normalize(360 - base);
+        return normalize(base + remoteOffset(context));
+    }
+
+    @SuppressWarnings("deprecation")
+    static int displayRotationDegrees(Context context) {
+        try {
+            WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
+            if (wm != null && wm.getDefaultDisplay() != null) {
+                switch (wm.getDefaultDisplay().getRotation()) {
+                    case Surface.ROTATION_90: return 90;
+                    case Surface.ROTATION_180: return 180;
+                    case Surface.ROTATION_270: return 270;
+                    default: return 0;
+                }
+            }
+        } catch (Exception ignored) {}
+        return 0;
+    }
+
+    static String summary(Context context) {
+        if (!enabled(context)) return "Production defaults";
+        return "TX=" + txFormulaLabel(txFormula(context))
+                + " • source=" + sourceLabel(rotationSource(context))
+                + " • preview=" + previewLabel(localPreviewMode(context))
+                + " • mirror=" + (mirrorLocalPreview(context) ? "ON" : "OFF")
+                + " • frameMeta=" + (sendFrameRotation(context) ? "TX" : "-")
+                + "/" + (acceptFrameRotation(context) ? "RX" : "-")
+                + " • force=" + forcedLabel(forcedTxRotation(context))
+                + " • remote=" + remoteModeLabel(remoteMode(context))
+                + "+" + remoteOffset(context)
+                + " • codec=" + (forceJpeg(context) ? "JPEG" : "AUTO");
+    }
+
+    static String txFormulaLabel(int value) {
+        switch (value) {
+            case TX_ANDROID_RELATIVE: return "Android relative";
+            case TX_WEBRTC_STYLE: return "WebRTC/JPEG";
+            case TX_SENSOR_ONLY: return "Sensor only";
+            default: return "Current QL";
+        }
+    }
+
+    static String sourceLabel(int value) {
+        return value == SOURCE_PHYSICAL_SENSOR ? "Physical sensor" : "Display";
+    }
+
+    static String previewLabel(int value) {
+        switch (value) {
+            case PREVIEW_DISPLAY_ONLY: return "TextureView display-only";
+            case PREVIEW_NONE: return "No rotation";
+            case PREVIEW_INVERSE_STREAM: return "Inverse stream";
+            default: return "Stream rotation";
+        }
+    }
+
+    static String remoteModeLabel(int value) {
+        return value == REMOTE_INVERSE ? "Inverse" : "Direct";
+    }
+
+    static String forcedLabel(int value) {
+        return value < 0 ? "Auto" : value + "°";
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static int normalizeQuarter(int value) {
+        int n = normalize(value);
+        if (n < 45 || n >= 315) return 0;
+        if (n < 135) return 90;
+        if (n < 225) return 180;
+        return 270;
+    }
+
+    static int normalize(int value) {
+        return ((value % 360) + 360) % 360;
+    }
+}
