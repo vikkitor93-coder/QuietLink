@@ -260,3 +260,9 @@
 213. Peer role-swap logging: when the other phone confirms a role swap, the receiving phone must record `source=peer` before its resulting role transition.
 214. Privacy regression: role logs may contain only source/local role names and tell-peer state; they must contain no device IDs, peer names, addresses, codes, media, or keys.
 
+215. v0.3.54 updater continuity: on the older phone running v0.3.53, install v0.3.54 through **CHECK UPDATE** rather than manual APK.
+216. Older-Android rotation lab UI: open 🛠 -> Video rotation lab on the older phone and verify the selectable list is visible immediately, including Preset, sender formula, rotation source, local preview transform, mirror, per-frame TX/RX, forced sender rotation, remote handling, codec test, instructions, and reset.
+217. Rotation lab title: verify it shows **PRODUCTION** before any experiment and **TEST** after changing a setting/preset.
+218. Rotation-lab dialog regression: no device should show only explanatory text with an empty controls area.
+219. Existing v0.3.53 Sleeping Baby confirmation: keep older phone as Baby Station and verify continuous audio still works after updating to v0.3.54.
+
