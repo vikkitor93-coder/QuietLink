@@ -340,7 +340,7 @@ final class RotationLabConfig {
 
     static void setForceLegacyPipeline(Context context, boolean value) {
         prefs(context).edit()
-                .putInt(KEY_FORCE_LEGACY_PIPELINE, value ? 1 : 0)
+                .putBoolean(KEY_FORCE_LEGACY_PIPELINE, value)
                 .apply();
     }
 
