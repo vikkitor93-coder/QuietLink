@@ -1,4 +1,4 @@
-# QuietLink 0.3.57
+# QuietLink 0.3.58
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,24 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.58 calibration profiles + encrypted diagnostic-log attachments
+- Aspect selection in **VIDEO TUNE** no longer relies on a Spinner dropdown. It opens an Android single-choice list, which remains vertically scrollable on small and older phones even with the expanded portrait/landscape ratio set.
+- Calibration profiles can be saved separately for the four visual presentation slots:
+  - **VIDEO • INLINE**
+  - **VIDEO • FULLSCREEN**
+  - **BABY • INLINE**
+  - **BABY • FULLSCREEN**
+- A profile snapshots the current sender formula/source/rotation, Window 1 incoming direction/offset/aspects/frame RX, Window 2 preview base/offset/aspect/mirror, frame TX and codec experiment state.
+- Once saved, the matching profile auto-loads when that presentation opens. This deliberately allows inline and fullscreen to use different proven corrections when a device/Android build needs them.
+- **SHOW / COPY PROFILE** produces a short plain-text summary that can be pasted into a bug report/chat so the proven settings can later be promoted into production defaults.
+- Developer-unlocked QuietLink chat now has **📄 SEND MY LOG**.
+- SEND MY LOG uses `QuietLog.exportText()`, so the file is the same defensive privacy-safe diagnostic output that excludes IP addresses, device/peer names, IDs, fingerprints/keys, six-digit room codes, chat contents and media.
+- The text file is split into bounded 4 KiB chunks, carried through the existing authenticated/encrypted QL5 chat channel, SHA-256 checked, and automatically reconstructed on the receiving phone as **QuietLink-diagnostic-log.txt**.
+- Users do not see base64/chunk protocol messages; they see a normal `.txt` attachment in chat. Tapping it opens the text file inside QuietLink.
+- Chat diagnostic attachments are capped below 1 MiB and kept in app cache; incomplete/invalid/digest-mismatched transfers are discarded.
+- File-transfer logs record only technical transfer size/chunk count/failure stage, never attachment contents.
+- Wi-Fi Direct behavior is unchanged: CODE starts normal LAN immediately, production online bootstrap after ~1.5 s, and Android Wi-Fi Direct DNS-SD/group fallback after ~8 s if the session is still not established. Wi-Fi Direct creates a direct local group and does not require a user-created hotspot.
 
 ## 0.3.57 numbered per-window video tuning
 - The compact video-tuning panel is now organized around the **two visible video windows**, rather than mixing unrelated sender/receiver/local/fullscreen controls.
