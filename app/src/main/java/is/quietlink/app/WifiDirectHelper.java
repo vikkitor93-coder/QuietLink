@@ -274,7 +274,8 @@ public final class WifiDirectHelper implements AutoCloseable {
     }
 
     private void restartJoinDiscovery(int g, int attempt) {
-        if (!valid(g) || !joiner || connectedCallbackDelivered) return;
+        if (!valid(g) || !joiner || connectedCallbackDelivered
+                || expectedPort > 0) return;
 
         Runnable addRequest = () -> {
             if (!valid(g) || !joiner) return;
