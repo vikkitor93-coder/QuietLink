@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Post-purge verification trigger
 import re
 import subprocess
 import sys
