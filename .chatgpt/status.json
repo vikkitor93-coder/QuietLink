@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "working",
+  "status": "partial",
   "task": "Productionize QuietLink internet rendezvous",
-  "summary": "Integrating the permanent rendezvous endpoint into normal CODE host/join while preserving local-first fallback and the developer override.",
-  "updated_at": "2026-09-23T02:25:00Z",
-  "artifact": null
+  "summary": "v0.3.48 is built and published with automatic production rendezvous and local-first fallback. Two-phone normal-flow validation is now required.",
+  "updated_at": "2026-09-23T02:45:00Z",
+  "artifact": "QuietLink v0.3.48"
 }
