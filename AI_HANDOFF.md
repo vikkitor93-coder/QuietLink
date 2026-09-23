@@ -4,8 +4,8 @@ Updated: **2026-09-23**
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.57 / versionCode 69**  
-Latest release CI: **passed**
+Current release: **v0.3.58 / versionCode 70**  
+Latest release CI: **pending v0.3.58 validation**
 
 ---
 
@@ -162,6 +162,45 @@ Internet-path recovery still needs to become transport-independent.
 ---
 
 # 6. Online P2P work completed
+
+
+## v0.3.58 — Saved calibration profiles + encrypted diagnostic .txt attachments
+
+User feedback after v0.3.57:
+- Expanded aspect ratio selector could not be scrolled on the test UI/device.
+- User observed that inline and fullscreen can require different rotation corrections and wants saved profiles for each mode/presentation, then plans to send those profiles back for promotion.
+- Moving diagnostic logs from a badly connected phone by Bluetooth is tedious; user wants to send the local privacy-safe log through QuietLink chat and have the peer see only a .txt attachment.
+
+Implemented:
+- Quick aspect selection now uses a scrollable AlertDialog ListView rather than Spinner dropdown.
+- Four automatic profile slots: VIDEO INLINE, VIDEO FULLSCREEN, BABY INLINE, BABY FULLSCREEN.
+- SAVE CURRENT snapshots all current orientation/aspect/sender/receiver developer calibration state.
+- Saved profile auto-loads on matching inline/fullscreen transition and on matching visual mode activation.
+- LOAD and CLEAR remain available; SHOW / COPY PROFILE gives a compact pasteable settings summary.
+- Chat developer UI adds SEND MY LOG.
+- Only `QuietLog.exportText()` is eligible for this transfer path; it is already privacy-redacted.
+- Transfer is application-level text attachment framing over the existing encrypted QL5 chat channel:
+  - FILE_BEGIN metadata,
+  - ordered 4 KiB raw chunks encoded for transport,
+  - FILE_END,
+  - maximum 900 KiB,
+  - SHA-256 end-to-end integrity before creating the attachment.
+- Receiver stores the reconstructed .txt in app cache and SessionBus presents a normal file attachment. Base64/chunk framing is never surfaced as chat text.
+- Tapping attachment opens selectable text in QuietLink.
+- No new external storage permission, cloud upload, analytics, identifier logging or plaintext rendezvous content.
+- Regular user text remains capped and unchanged.
+
+Wi-Fi Direct clarified from current source:
+- Actual Android `WifiP2pManager` implementation exists in `WifiDirectHelper`.
+- Host advertises a DNS-SD record containing only the derived room ID and local TCP port, creates a Wi-Fi Direct group, and the joiner discovers the matching service then connects to the group owner.
+- CODE host/join starts LAN immediately, internet rendezvous bootstrap after ~1.5 s, and Wi-Fi Direct fallback after ~8 s if still unconnected.
+- Wi-Fi Direct is intended to remove the need for an existing router/hotspot; it still requires Android nearby/location permission depending OS version and all peer traffic still goes through QL5.
+
+Architecture note for future video cleanup:
+- Current manual Camera2 + fixed 1280x720 MediaCodec Surface + separate rotation metadata/control + TextureView matrix approach creates several independent coordinate spaces.
+- Android CameraX exposes crop/rotation transformation metadata and PreviewView applies preview transforms automatically. A future cleanup should consider CameraX/SurfaceProcessor or a single EGL normalization stage before encode so the stream has one canonical orientation/aspect and the receiver performs one transform only.
+- Do not replace the current pipeline until the v0.3.58 profiles have captured proven behavior from both phones.
+
 
 
 ## v0.3.57 — Numbered per-window video tuning + portrait aspect ratios
@@ -760,19 +799,20 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: validate v0.3.57 per-window calibration and the v0.3.56 internet fix
+## Primary next checkpoint: capture stable saved profiles and validate encrypted log transfer
 
-After v0.3.57 CI passes:
+After v0.3.58 CI passes:
 1. Update both phones through CHECK UPDATE.
-2. Confirm badges: **1** on the large incoming window, **2** on the mini/self-camera window.
-3. Open **VIDEO TUNE / ROTATE** and use the dropdown to select Window 1 or Window 2.
-4. Window 2 first: try **9:16**, then 3:4 / 2:3 / 4:5 as needed. Use a face or circular object and report which ratio stops the stretch.
-5. Fine-tune Window 2 rotation using its new +0/+90/+180/+270 offset without altering Window 1.
-6. Window 1: tune incoming direction/offset/aspect; confirm the same Window 1 setting carries into fullscreen.
-7. Finish portrait, landscape-left, landscape-right on both phones.
-8. Also complete the still-pending internet regression test: Wi-Fi OFF on one phone + mobile data ON, other phone on another network, CODE HOST/JOIN must start without Wi-Fi/hotspot prompt and reach rendezvous/relay.
-9. Report the final Window 1 / Window 2 settings for each phone.
-10. Promote only the proven common subset to production defaults after both devices pass.
+2. Confirm aspect choice list scrolls on the older phone.
+3. For each phone, tune VIDEO INLINE and press SAVE CURRENT.
+4. Enter fullscreen, tune separately, save VIDEO FULLSCREEN.
+5. If Baby mode needs different corrections, repeat for BABY INLINE and BABY FULLSCREEN.
+6. Use SHOW / COPY PROFILE for each saved profile and send the resulting text back in chat. These become the evidence for selecting production defaults.
+7. Open QuietLink chat on Phone A and tap SEND MY LOG. Phone B should receive a normal QuietLink-diagnostic-log.txt attachment with no visible transport/base64 text.
+8. Repeat Phone B -> Phone A so both session logs can be collected on one phone without Bluetooth.
+9. If a connection is especially bad, send the log before deliberately disconnecting; if transfer fails, no partial attachment should be shown.
+10. Complete the pending v0.3.56 internet test if not already done: Wi-Fi OFF/mobile data ON on one phone, other phone on another network, CODE must reach the online path without hotspot requirement.
+11. After profile evidence is received, decide whether to promote calibrated defaults or begin the cleaner canonical CameraX/EGL normalization experiment.
 
 ---
 
