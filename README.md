@@ -1,4 +1,4 @@
-# QuietLink 0.3.60
+# QuietLink 0.3.61
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,22 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.61 portrait stabilization + chat download + Wi-Fi Direct readiness
+- **Temporary orientation policy:** MainActivity is locked to **portrait**. QuietLink will not rotate the application UI/video presentation into landscape while the underlying Camera2/H.264 transform model is being corrected.
+- Existing per-phone VIDEO INLINE/FULLSCREEN calibration profiles are preserved. The two user-provided profiles show that both phones are correct in portrait but require materially different presentation/sender corrections, so portrait lock is the safer temporary production behavior than trying to infer landscape transforms.
+- Received chat text attachments now open with **DOWNLOAD** as well as Close. DOWNLOAD uses Android's document picker and copies the reconstructed cached `.txt` to a user-selected file location; it does not re-download from the peer.
+- Wi-Fi Direct evidence from the two test phones showed permission already granted, but Android initially reported P2P disabled and operations immediately returned BUSY. One joiner later transitioned to enabled and discovery began, while the host exhausted group-creation retries while still disabled.
+- Wi-Fi Direct startup now:
+  - registers the P2P receiver before work,
+  - on Android 10+ calls `WifiP2pManager.requestP2pState()` and waits for `WIFI_P2P_STATE_ENABLED`,
+  - on older Android gives the state broadcast time to arrive before starting,
+  - distinguishes **Wi-Fi radio off** from **Wi-Fi radio on but Android P2P still starting**,
+  - does not hammer createGroup/discoverServices while P2P is explicitly disabled,
+  - releases the pending host/join operation immediately when an enabled-state broadcast arrives,
+  - continues other QuietLink connection paths while waiting.
+- P2P state diagnostics now include only enabled/wifi-radio/source flags; no peer address, MAC, room code or identity is logged.
+- QL5 authentication/encryption, rendezvous behavior, update signing and package identity are unchanged.
 
 ## 0.3.60 local log/profile export
 - Developer tools now expose **Export log + profiles (.txt)** and **Export profiles only (.txt)**.
