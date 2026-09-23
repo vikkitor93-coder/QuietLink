@@ -4,8 +4,8 @@ Updated: **2026-09-23**
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.56 / versionCode 68**  
-Latest release CI: **passed**
+Current release: **v0.3.57 / versionCode 69**  
+Latest release CI: **pending v0.3.57 validation**
 
 ---
 
@@ -162,6 +162,31 @@ Internet-path recovery still needs to become transport-independent.
 ---
 
 # 6. Online P2P work completed
+
+
+## v0.3.57 — Numbered per-window video tuning + portrait aspect ratios
+
+User feedback after v0.3.56:
+- The tuning controls were still conceptually mixed.
+- User wants every visible video window to have its own tuning context.
+- Requested a 1/2 dropdown with matching visible numbers on the corresponding video windows.
+- Mini window needs more aspect options, specifically real portrait ratios such as 9:16 rather than only landscape ratios.
+
+Implemented:
+- Developer badges identify **Window 1 = main/incoming** and **Window 2 = mini/my camera**.
+- Compact panel now uses a Window 1/2 Spinner and renders only that window's controls.
+- Window 1: remote direction, remote quarter-turn offset, one aspect control applied consistently inline+fullscreen, frame RX.
+- Window 2: preview base, new local-preview quarter-turn offset, aspect, mirror; outbound sender rotation/formula/source/frame-TX are grouped separately below "SEND THIS CAMERA TO THE OTHER PHONE".
+- New aspect ratios preserve old stored numeric values and append 9:16, 3:4, 2:3, 5:4, 4:5.
+- Quick/full aspect lists now include Auto, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 1:1, Stretch.
+- Explicit aspect modes are literal final displayed WIDTH:HEIGHT, independent of quarter-turn direction.
+- AUTO remains rotation-aware and derives native 16:9/9:16 from H.264 orientation.
+- No network/protocol/signing changes.
+
+Still pending from v0.3.56:
+- Human validation that mobile-data-only CODE is restored.
+- Final rotation/aspect calibration on both phones.
+
 
 
 ## v0.3.56 — Internet CODE regression fix + fullscreen/aspect test expansion
@@ -735,21 +760,19 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: restore internet CODE first, then finish fullscreen rotation/aspect calibration
+## Primary next checkpoint: validate v0.3.57 per-window calibration and the v0.3.56 internet fix
 
-After v0.3.56 CI passes:
+After v0.3.57 CI passes:
 1. Update both phones through CHECK UPDATE.
-2. **Internet regression test first:** Phone A Wi-Fi OFF / mobile data ON; Phone B on another network. Use CODE HOST/JOIN. There must be no Wi-Fi/hotspot prerequisite dialog.
-3. Confirm the online CODE path progresses into rendezvous/relay rather than being blocked in MainActivity.
-4. If internet matching still fails after the session starts, export the privacy-safe log; that would be a transport/server issue rather than the removed UI gate.
-5. Start a visual session and enter fullscreen.
-6. Tap the fullscreen **ROTATE** button and verify the compact panel works without leaving fullscreen; X must close it.
-7. Local mini-preview: test Auto / 16:9 / 4:3 / 3:2 / 1:1 and choose the first ratio that makes a face/circular object proportionally correct. Do not use Stretch as the final fix.
-8. Test Remote Aspect inline, then Fullscreen Aspect fullscreen.
-9. Finish portrait, landscape-left, landscape-right on both phones.
-10. Report the working per-phone rotation + aspect selections.
-11. Promote only the proven common subset to production defaults.
-12. Resume internet self-healing/media-relay work after the basic cross-network session is restored.
+2. Confirm badges: **1** on the large incoming window, **2** on the mini/self-camera window.
+3. Open **VIDEO TUNE / ROTATE** and use the dropdown to select Window 1 or Window 2.
+4. Window 2 first: try **9:16**, then 3:4 / 2:3 / 4:5 as needed. Use a face or circular object and report which ratio stops the stretch.
+5. Fine-tune Window 2 rotation using its new +0/+90/+180/+270 offset without altering Window 1.
+6. Window 1: tune incoming direction/offset/aspect; confirm the same Window 1 setting carries into fullscreen.
+7. Finish portrait, landscape-left, landscape-right on both phones.
+8. Also complete the still-pending internet regression test: Wi-Fi OFF on one phone + mobile data ON, other phone on another network, CODE HOST/JOIN must start without Wi-Fi/hotspot prompt and reach rendezvous/relay.
+9. Report the final Window 1 / Window 2 settings for each phone.
+10. Promote only the proven common subset to production defaults after both devices pass.
 
 ---
 
