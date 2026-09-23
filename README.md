@@ -1,4 +1,4 @@
-# QuietLink 0.3.47
+# QuietLink 0.3.48
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -6,9 +6,10 @@
 Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleeping Baby modes.
 
 ## Connection order
-1. Same router / LAN first using Android NSD.
-2. Wi-Fi Direct fallback after 8 seconds without an authenticated LAN peer.
-3. Online availability is checked independently. Internet peer calling is not enabled yet in v0.3.37, and local calling never depends on the online service.
+1. Same router / LAN starts immediately using Android NSD.
+2. After a short 1.5-second local head start, CODE host/join automatically starts production rendezvous signaling in parallel when the published endpoint is available.
+3. Wi-Fi Direct fallback starts after 8 seconds without an authenticated peer.
+4. Local calling never depends on the online service. The permanent rendezvous can fail without breaking LAN/Hotspot/Wi-Fi Direct. Direct internet session establishment remains under milestone-7 validation.
 
 ## Security
 - Ephemeral P-256 ECDH every session.
@@ -28,6 +29,16 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.48 production rendezvous integration
+- Promotes `https://rendezvousquietlinkvikman.dpdns.org` from a developer-only test endpoint into QuietLink's normal production rendezvous configuration.
+- CODE host/join gives LAN a 1.5-second head start, then starts rendezvous candidate exchange automatically in parallel; Wi-Fi Direct still begins after 8 seconds.
+- Existing developer override behavior is preserved for alternate test endpoints.
+- Phones that previously saved the now-official production URL as their developer override automatically clear that redundant local override after upgrading.
+- Production peer matches now show **Internet peer found • checking connection paths…** without exposing endpoint/candidate details.
+- The published online-status document now advertises the permanent rendezvous URL.
+- The Online dot remains conservative/red because `onlineCallsAvailable` stays false until the normal cross-network call path is explicitly validated.
+- No changes to QL5 encryption, pairing-code secrecy, media encryption, signing, or privacy-safe logging.
 
 ## 0.3.47 signing-key rotation
 - First stable release signed with the new private QuietLink v2 key held only in GitHub Actions Secrets/offline backup.
