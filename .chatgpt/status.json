@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "working",
-  "task": "Guard Sleeping Baby role swaps",
-  "summary": "The older-phone log proved microphone capture/TX worked until the phone transitioned from Baby Station to Parent Station. v0.3.53 adds confirmed role swapping and source logging; first human step is CHECK UPDATE from v0.3.52 on the older phone, then a 10-minute Baby Station audio test.",
-  "updated_at": "2026-09-23T04:32:00Z",
-  "artifact": "QuietLink v0.3.53"
+  "status": "partial",
+  "task": "Validate Sleeping Baby audio and updater continuity",
+  "summary": "v0.3.53 built, signed, tested, and published successfully. Older phone should use CHECK UPDATE from v0.3.52, then run at least 10 minutes as Baby Station with mic enabled; SWAP now requires confirmation and role transitions are source-logged.",
+  "updated_at": "2026-09-23T04:26:00Z",
+  "artifact": "QuietLink v0.3.53 APK"
 }
