@@ -1038,14 +1038,32 @@ public final class SessionService extends Service {
                 }
             }, 1500);
             main.postDelayed(() -> {
-                if (!established.get() && !connecting.get() && !stopped.get()) {
+                // Start P2P discovery even if a transient LAN socket attempt is
+                // in progress. Older code skipped this one-shot fallback when
+                // connecting happened to be true at exactly 8 seconds.
+                if (!established.get() && !stopped.get()) {
                     wifiDirect = new WifiDirectHelper(this);
-                    wifiDirect.discoverAndConnect(code, this::connectOnce);
+                    wifiDirect.discoverAndConnect(
+                            code, this::connectWifiDirectEndpoint);
                 }
             }, 8000);
         } catch (Exception e) {
             fail("Join failed: " + readable(e));
         }
+    }
+
+    private void connectWifiDirectEndpoint(String address, int port) {
+        if (stopped.get() || established.get()
+                || address == null || port <= 0) return;
+
+        // A LAN candidate may already be consuming the single connection slot.
+        // Do not throw away the now-working Wi-Fi Direct route; retry it once
+        // the transient candidate finishes.
+        if (connecting.get()) {
+            main.postDelayed(() -> connectWifiDirectEndpoint(address, port), 650L);
+            return;
+        }
+        connectOnce(address, port);
     }
 
     private void connectOnce(String address, int port) {
