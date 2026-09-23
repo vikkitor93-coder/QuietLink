@@ -2314,6 +2314,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             FrameLayout.LayoutParams stateLp = new FrameLayout.LayoutParams(-2,-2, Gravity.START | Gravity.TOP);
             stateLp.setMargins(dp(8),dp(8),dp(8),dp(8));
             videoFrame.addView(videoStateOverlay, stateLp);
+            addDevWindowBadge(videoFrame, "1",
+                    Gravity.CENTER_HORIZONTAL | Gravity.TOP);
 
             if (activeMode == SessionService.MODE_VIDEO
                     || activeMode == SessionService.MODE_BABY) {
@@ -2334,6 +2336,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             localPreview.setBackgroundColor(Color.TRANSPARENT);
             localPreview.setElevation(dp(8));
             previewFrame.addView(localPreview, new FrameLayout.LayoutParams(-1,-1));
+            addDevWindowBadge(previewFrame, "2",
+                    Gravity.START | Gravity.TOP);
 
             FrameLayout.LayoutParams previewLp = makeInlinePreviewLayoutParams();
             videoFrame.addView(previewFrame, previewLp);
@@ -3177,6 +3181,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 Gravity.START | Gravity.TOP);
         stateLp.setMargins(dp(10),dp(10),dp(10),dp(10));
         frame.addView(videoStateOverlay, stateLp);
+        addDevWindowBadge(frame, "1",
+                Gravity.CENTER_HORIZONTAL | Gravity.TOP);
 
         FrameLayout previewFrame = new FrameLayout(this);
         previewFrame.setBackgroundColor(Color.BLACK);
@@ -3188,6 +3194,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         localPreview.setScaleType(ImageView.ScaleType.FIT_CENTER);
         localPreview.setBackgroundColor(Color.TRANSPARENT);
         previewFrame.addView(localPreview, new FrameLayout.LayoutParams(-1,-1));
+        addDevWindowBadge(previewFrame, "2",
+                Gravity.START | Gravity.TOP);
         frame.addView(previewFrame, makeFullscreenPreviewLayoutParams());
 
         android.graphics.Bitmap shownRemote = devDummySession
@@ -3292,6 +3300,21 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         requestVideoWakeRefresh();
     }
 
+    private void addDevWindowBadge(FrameLayout parent,
+                                   String number,
+                                   int gravity) {
+        if (!devUnlocked || parent == null) return;
+        TextView badge = text(number, 11, Color.WHITE, true);
+        badge.setGravity(Gravity.CENTER);
+        badge.setBackground(makeRound(Color.argb(215, 35, 105, 185), 18));
+        badge.setElevation(dp(18));
+        badge.setContentDescription("Video window " + number);
+        FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(
+                dp(30), dp(30), gravity);
+        p.setMargins(dp(8),dp(8),dp(8),dp(8));
+        parent.addView(badge, p);
+    }
+
     private boolean localPreviewIsPortrait() {
         int r = RotationLabConfig.enabled(this)
                 ? RotationLabConfig.resolveLocalPreviewRotation(
@@ -3301,24 +3324,34 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     }
 
     private int[] localPreviewBoxDp() {
-        boolean portrait = localPreviewIsPortrait();
         int mode = RotationLabConfig.localAspect(this);
-        float ratio = RotationLabConfig.aspectRatio(mode);
-        int longSide = 160;
-        int shortSide = Math.max(72, Math.round(longSide / Math.max(1f, ratio)));
+        float ratio;
+
+        if (mode == RotationLabConfig.ASPECT_AUTO) {
+            // AUTO follows the effective local preview orientation.
+            ratio = localPreviewIsPortrait() ? (9f / 16f) : (16f / 9f);
+        } else if (RotationLabConfig.stretchAspect(mode)) {
+            ratio = localPreviewIsPortrait() ? (9f / 16f) : (16f / 9f);
+        } else {
+            // Explicit ratios are literal WIDTH:HEIGHT. 16:9 remains wide and
+            // 9:16 remains tall; do not silently flip the user's selection.
+            ratio = RotationLabConfig.aspectRatio(mode);
+        }
 
         if (mode == RotationLabConfig.ASPECT_1_1) {
-            longSide = 128;
-            shortSide = 128;
-        }
-        if (RotationLabConfig.stretchAspect(mode)) {
-            shortSide = 90;
-            longSide = 160;
+            return new int[] {128, 128};
         }
 
-        return portrait
-                ? new int[] {shortSide, longSide}
-                : new int[] {longSide, shortSide};
+        int width;
+        int height;
+        if (ratio >= 1f) {
+            width = 160;
+            height = Math.max(64, Math.round(width / ratio));
+        } else {
+            height = 160;
+            width = Math.max(64, Math.round(height * ratio));
+        }
+        return new int[] {width, height};
     }
 
     private FrameLayout.LayoutParams makeInlinePreviewLayoutParams() {
@@ -3874,11 +3907,18 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             float preRotateHeight = quarterTurn ? width : height;
             matrix.setScale(preRotateWidth / width, preRotateHeight / height, cx, cy);
         } else {
-            float ratio = RotationLabConfig.aspectRatio(aspectMode);
-            float sourceWidth = ratio * 1000f;
-            float sourceHeight = 1000f;
-            float effectiveSourceWidth = quarterTurn ? sourceHeight : sourceWidth;
-            float effectiveSourceHeight = quarterTurn ? sourceWidth : sourceHeight;
+            float effectiveSourceWidth;
+            float effectiveSourceHeight;
+            if (aspectMode == RotationLabConfig.ASPECT_AUTO) {
+                effectiveSourceWidth = quarterTurn ? H264Codec.HEIGHT : H264Codec.WIDTH;
+                effectiveSourceHeight = quarterTurn ? H264Codec.WIDTH : H264Codec.HEIGHT;
+            } else {
+                // Explicit aspect is the FINAL visible WIDTH:HEIGHT after
+                // rotation, which makes 9:16 genuinely different from 16:9.
+                float ratio = RotationLabConfig.aspectRatio(aspectMode);
+                effectiveSourceWidth = ratio * 1000f;
+                effectiveSourceHeight = 1000f;
+            }
 
             float scale = crop
                     ? Math.max(width / effectiveSourceWidth, height / effectiveSourceHeight)
