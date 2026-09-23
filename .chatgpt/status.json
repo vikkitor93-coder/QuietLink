@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "working",
-  "task": "Normalize camera/H264/TextureView orientation across devices",
-  "summary": "v0.3.62 adds capability-negotiated canonical clockwise H.264 rotation, per-frame metadata, Camera2 rotate/crop opt-out, display-only local TextureView correction, canonical aspect handling, and a legacy-profile override. Third-phone evidence is documented. CI is next.",
-  "updated_at": "2026-09-23T21:33:00Z",
-  "artifact": "QuietLink v0.3.62"
+  "status": "partial",
+  "task": "Validate canonical video orientation on a fresh fourth phone",
+  "summary": "v0.3.62 built, signed, tested, and published successfully. Third-phone evidence led to a canonical Camera2/H264/TextureView orientation fix rather than another hard-coded offset. Human checkpoint: update both peers, use a fresh fourth phone with no profile, confirm AUTO ORIENTATION ACTIVE and upright local/remote video without tuning; legacy profile override remains available.",
+  "updated_at": "2026-09-23T21:30:00Z",
+  "artifact": "QuietLink v0.3.62 APK"
 }
