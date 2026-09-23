@@ -1023,7 +1023,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     RotationLabConfig.setSendFrameRotation(
                             this, !RotationLabConfig.sendFrameRotation(this));
                     applyRotationLabNow();
-                    populateQuickRotationPanel(box, dialog);
+                    refreshQuickRotationPanelAtSameScroll(box, dialog);
                 }), new LinearLayout.LayoutParams(0,dp(34),1f));
         LinearLayout.LayoutParams toggleLp = new LinearLayout.LayoutParams(0,dp(34),1f);
         toggleLp.setMargins(dp(4),0,0,0);
@@ -1032,7 +1032,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     RotationLabConfig.setAcceptFrameRotation(
                             this, !RotationLabConfig.acceptFrameRotation(this));
                     applyRotationLabNow();
-                    populateQuickRotationPanel(box, dialog);
+                    refreshQuickRotationPanelAtSameScroll(box, dialog);
                 }), toggleLp);
         LinearLayout.LayoutParams mirrorLp = new LinearLayout.LayoutParams(0,dp(34),1f);
         mirrorLp.setMargins(dp(4),0,0,0);
@@ -1041,7 +1041,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     RotationLabConfig.setMirrorLocalPreview(
                             this, !RotationLabConfig.mirrorLocalPreview(this));
                     applyRotationLabNow();
-                    populateQuickRotationPanel(box, dialog);
+                    refreshQuickRotationPanelAtSameScroll(box, dialog);
                 }), mirrorLp);
         box.addView(toggles, lp(-1,dp(34),0,4,0,0));
     }
@@ -1055,6 +1055,18 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         b.setPadding(dp(3),0,dp(3),0);
         b.setOnClickListener(listener);
         return b;
+    }
+
+    private void refreshQuickRotationPanelAtSameScroll(
+            LinearLayout box, android.app.Dialog dialog) {
+        View parent = (View) box.getParent();
+        final ScrollView scroll = parent instanceof ScrollView
+                ? (ScrollView) parent : null;
+        final int oldY = scroll == null ? 0 : scroll.getScrollY();
+        populateQuickRotationPanel(box, dialog);
+        if (scroll != null) {
+            scroll.post(() -> scroll.scrollTo(0, oldY));
+        }
     }
 
     private void addQuickRotationChoices(LinearLayout box,
@@ -1077,9 +1089,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             b.setOnClickListener(v -> {
                 try { choice.apply(index); } catch (Exception ignored) {}
                 applyRotationLabNow();
-                // Rebuild the contents inside the SAME dialog. The panel never
-                // closes or jumps back to the developer menu during iteration.
-                populateQuickRotationPanel(box, dialog);
+                // Rebuild inside the SAME dialog and restore the inner scroll
+                // position so rapid iteration does not jump back to the top.
+                refreshQuickRotationPanelAtSameScroll(box, dialog);
             });
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,dp(32),1f);
             if (i > 0) p.setMargins(dp(3),0,0,0);
@@ -1271,8 +1283,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         if (localVideoTexture != null) {
             localVideoTexture.post(() ->
                     applyVideoTextureTransform(localVideoTexture,
-                            SessionBus.localVideoRotation, true, true));
+                            SessionBus.localVideoRotation, true, false));
         }
+        updateLocalPreviewLayout();
         updateH264PictureInPictureAspect();
     }
 
@@ -2619,7 +2632,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 setFullscreenVideoControlsVisible(!videoControlsVisible));
         videoControlsVisible = true;
         setFullscreenVideoControlsVisible(true);
-        updateFullscreenLocalPreviewLayout();
+        updateLocalPreviewLayout();
     }
 
     private void exitVideoFullscreenInPlace() {
@@ -3554,7 +3567,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             }
 
             @Override public void onSurfaceTextureSizeChanged(android.graphics.SurfaceTexture texture, int width, int height) {
-                applyVideoTextureTransform(localVideoTexture, SessionBus.localVideoRotation, true, true);
+                applyVideoTextureTransform(localVideoTexture, SessionBus.localVideoRotation, true, false);
             }
 
             @Override public boolean onSurfaceTextureDestroyed(android.graphics.SurfaceTexture texture) {
