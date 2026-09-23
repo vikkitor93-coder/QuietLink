@@ -35,6 +35,14 @@ final class RotationLabConfig {
     static final int ASPECT_3_2 = 3;
     static final int ASPECT_1_1 = 4;
     static final int ASPECT_STRETCH = 5;
+    // Preserve the original persisted numeric values above. New portrait /
+    // reciprocal ratios are appended so existing v0.3.56 settings migrate
+    // without reinterpretation.
+    static final int ASPECT_9_16 = 6;
+    static final int ASPECT_3_4 = 7;
+    static final int ASPECT_2_3 = 8;
+    static final int ASPECT_5_4 = 9;
+    static final int ASPECT_4_5 = 10;
 
     static final int PRESET_PRODUCTION = 0;
     static final int PRESET_ANDROID_TEXTUREVIEW = 1;
@@ -46,6 +54,7 @@ final class RotationLabConfig {
     private static final String KEY_TX_FORMULA = "tx_formula";
     private static final String KEY_SOURCE = "rotation_source";
     private static final String KEY_PREVIEW = "preview_mode";
+    private static final String KEY_LOCAL_PREVIEW_OFFSET = "local_preview_offset";
     private static final String KEY_MIRROR = "mirror_local";
     private static final String KEY_SEND_FRAME_META = "send_frame_meta";
     private static final String KEY_ACCEPT_FRAME_META = "accept_frame_meta";
@@ -108,6 +117,18 @@ final class RotationLabConfig {
         prefs(context).edit()
                 .putBoolean(KEY_ENABLED, true)
                 .putInt(KEY_PREVIEW, clamp(value, PREVIEW_STREAM_ROTATION, PREVIEW_INVERSE_STREAM))
+                .apply();
+    }
+
+    static int localPreviewOffset(Context context) {
+        if (!enabled(context)) return 0;
+        return normalizeQuarter(prefs(context).getInt(KEY_LOCAL_PREVIEW_OFFSET, 0));
+    }
+
+    static void setLocalPreviewOffset(Context context, int value) {
+        prefs(context).edit()
+                .putBoolean(KEY_ENABLED, true)
+                .putInt(KEY_LOCAL_PREVIEW_OFFSET, normalizeQuarter(value))
                 .apply();
     }
 
@@ -241,8 +262,13 @@ final class RotationLabConfig {
 
     static float aspectRatio(int mode) {
         switch (clampAspect(mode)) {
+            case ASPECT_9_16: return 9f / 16f;
             case ASPECT_4_3: return 4f / 3f;
+            case ASPECT_3_4: return 3f / 4f;
             case ASPECT_3_2: return 3f / 2f;
+            case ASPECT_2_3: return 2f / 3f;
+            case ASPECT_5_4: return 5f / 4f;
+            case ASPECT_4_5: return 4f / 5f;
             case ASPECT_1_1: return 1f;
             case ASPECT_16_9:
             case ASPECT_AUTO:
@@ -257,8 +283,13 @@ final class RotationLabConfig {
     static String aspectLabel(int mode) {
         switch (clampAspect(mode)) {
             case ASPECT_16_9: return "16:9";
+            case ASPECT_9_16: return "9:16";
             case ASPECT_4_3: return "4:3";
+            case ASPECT_3_4: return "3:4";
             case ASPECT_3_2: return "3:2";
+            case ASPECT_2_3: return "2:3";
+            case ASPECT_5_4: return "5:4";
+            case ASPECT_4_5: return "4:5";
             case ASPECT_1_1: return "1:1";
             case ASPECT_STRETCH: return "Stretch";
             default: return "Auto";
@@ -290,11 +321,13 @@ final class RotationLabConfig {
         if (preset == PRESET_ANDROID_TEXTUREVIEW) {
             e.putInt(KEY_TX_FORMULA, TX_ANDROID_RELATIVE)
                     .putInt(KEY_PREVIEW, PREVIEW_DISPLAY_ONLY)
+                    .putInt(KEY_LOCAL_PREVIEW_OFFSET, 0)
                     .putBoolean(KEY_SEND_FRAME_META, false)
                     .putBoolean(KEY_ACCEPT_FRAME_META, false);
         } else if (preset == PRESET_WEBRTC) {
             e.putInt(KEY_TX_FORMULA, TX_WEBRTC_STYLE)
                     .putInt(KEY_PREVIEW, PREVIEW_DISPLAY_ONLY)
+                    .putInt(KEY_LOCAL_PREVIEW_OFFSET, 0)
                     .putBoolean(KEY_SEND_FRAME_META, true)
                     .putBoolean(KEY_ACCEPT_FRAME_META, true);
         } else {
@@ -348,19 +381,25 @@ final class RotationLabConfig {
     }
 
     static int resolveLocalPreviewRotation(Context context, int streamRotation) {
+        int base;
         switch (localPreviewMode(context)) {
             case PREVIEW_DISPLAY_ONLY:
                 // TextureView already compensates sensor orientation. Android's
                 // Camera2 sample applies the inverse display rotation.
-                return normalize(360 - displayRotationDegrees(context));
+                base = normalize(360 - displayRotationDegrees(context));
+                break;
             case PREVIEW_NONE:
-                return 0;
+                base = 0;
+                break;
             case PREVIEW_INVERSE_STREAM:
-                return normalize(360 - streamRotation);
+                base = normalize(360 - streamRotation);
+                break;
             case PREVIEW_STREAM_ROTATION:
             default:
-                return normalize(streamRotation);
+                base = normalize(streamRotation);
+                break;
         }
+        return normalize(base + localPreviewOffset(context));
     }
 
     static int resolveRemoteRotation(Context context, int reportedRotation) {
@@ -390,6 +429,7 @@ final class RotationLabConfig {
         return "TX=" + txFormulaLabel(txFormula(context))
                 + " • source=" + sourceLabel(rotationSource(context))
                 + " • preview=" + previewLabel(localPreviewMode(context))
+                + "+" + localPreviewOffset(context)
                 + " • mirror=" + (mirrorLocalPreview(context) ? "ON" : "OFF")
                 + " • frameMeta=" + (sendFrameRotation(context) ? "TX" : "-")
                 + "/" + (acceptFrameRotation(context) ? "RX" : "-")
@@ -437,7 +477,7 @@ final class RotationLabConfig {
     }
 
     private static int clampAspect(int value) {
-        return clamp(value, ASPECT_AUTO, ASPECT_STRETCH);
+        return clamp(value, ASPECT_AUTO, ASPECT_4_5);
     }
 
     private static int normalizeQuarter(int value) {
