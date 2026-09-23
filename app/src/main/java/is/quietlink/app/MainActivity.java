@@ -1896,7 +1896,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             swapRole.setContentDescription(activeBabyStation
                     ? "Make this device the Parent Station"
                     : "Make this device the Baby Station");
-            swapRole.setOnClickListener(v -> requestBabyRoleSwap());
+            swapRole.setOnClickListener(v -> confirmBabyRoleSwap());
             roleRow.addView(swapRole, new LinearLayout.LayoutParams(dp(74),dp(38)));
 
             root.addView(roleRow, lp(-1,dp(38),0,0,0,5));
@@ -3126,6 +3126,26 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             startService(new Intent(this, SessionService.class)
                     .setAction(SessionService.ACTION_CHAT_READ));
         } catch (Exception ignored) {}
+    }
+
+    private void confirmBabyRoleSwap() {
+        if (activeMode != SessionService.MODE_BABY) return;
+        String target = activeBabyStation ? "Parent Station" : "Baby Station";
+        String detail = activeBabyStation
+                ? "This phone will stop continuously sending its baby microphone/camera and become the monitoring Parent Station."
+                : "This phone will become the Baby Station and may continuously send microphone/camera audio/video according to the current controls.";
+
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Swap to " + target + "?")
+                .setMessage(detail + "\n\nThis prevents an accidental tap from silently swapping roles.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("SWAP", (dialog, which) -> {
+                    QuietLog.log("UI", "baby_role_swap_confirm",
+                            "from=" + (activeBabyStation ? "baby" : "parent")
+                                    + " to=" + (activeBabyStation ? "parent" : "baby"));
+                    requestBabyRoleSwap();
+                })
+                .show();
     }
 
     private void requestBabyRoleSwap() {
