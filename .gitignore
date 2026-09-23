@@ -1,0 +1,17 @@
+.gradle/
+.idea/
+local.properties
+**/build/
+*.iml
+.DS_Store
+
+# Signing material must never be committed
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pk8
+*.pem
+*.key
+signing-lineage*
+signing-secrets*

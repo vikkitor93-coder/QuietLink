@@ -1,0 +1,56 @@
+name: Purge legacy signing artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/purge-legacy-signing-artifacts.yml"
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+
+    steps:
+      - name: Delete legacy QuietLink APK/source artifacts
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$REPO/actions/artifacts?per_page=100"             --jq '.artifacts[] | [.id,.name] | @tsv' > "$RUNNER_TEMP/artifacts.tsv"
+
+          deleted=0
+          kept=0
+          while IFS=$'\t' read -r id name; do
+            case "$name" in
+              QuietLink-v0.3.47-apk|QuietLink-v0.3.47-source)
+                echo "KEEP $name"
+                kept=$((kept+1))
+                ;;
+              QuietLink-v*-apk|QuietLink-v*-source)
+                echo "DELETE legacy build artifact: $name"
+                gh api --method DELETE "repos/$REPO/actions/artifacts/$id"
+                deleted=$((deleted+1))
+                ;;
+              *)
+                ;;
+            esac
+          done < "$RUNNER_TEMP/artifacts.tsv"
+
+          echo "Deleted legacy QuietLink build artifacts: $deleted"
+          echo "Kept current v0.3.47 build artifacts: $kept"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Legacy signing artifact purge"
+            echo
+            echo "Old QuietLink APK/source workflow artifacts were removed."
+            echo "Current v0.3.47 v2-signed APK/source artifacts were retained."
+          } >> "$GITHUB_STEP_SUMMARY"

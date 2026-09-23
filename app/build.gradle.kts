@@ -1,0 +1,28 @@
+plugins { id("com.android.application") }
+
+android {
+    namespace = "is.quietlink.app"
+    compileSdk = 36
+
+    defaultConfig {
+        applicationId = "is.quietlink.app"
+        minSdk = 28
+        targetSdk = 36
+        versionCode = 59
+        versionName = "0.3.47"
+    }
+
+    buildTypes {
+        debug {
+        }
+        release {
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}

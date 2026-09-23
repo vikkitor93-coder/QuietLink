@@ -1,0 +1,13 @@
+{
+  "name": "quietlink-rendezvous",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Short-lived signaling/rendezvous service for QuietLink",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

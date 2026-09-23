@@ -1,0 +1,50 @@
+name: Security history audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - "tools/security_history_audit.py"
+      - ".github/workflows/security-history-audit.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch all branch and tag refs
+        run: |
+          git fetch --force --prune origin '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
+
+      - name: Scan every reachable commit without printing secret values
+        run: |
+          set +e
+          python3 tools/security_history_audit.py | tee security-history-audit.txt
+          code=${PIPESTATUS[0]}
+          echo "AUDIT_EXIT=$code" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuietLink-security-history-audit
+          path: security-history-audit.txt
+          if-no-files-found: error
+
+      - name: Mark findings
+        run: |
+          if [ "${AUDIT_EXIT}" = "2" ]; then
+            echo "::warning::Credential-pattern findings exist. Review the redacted audit artifact."
+          elif [ "${AUDIT_EXIT}" != "0" ]; then
+            echo "::error::Security history audit failed unexpectedly."
+            exit 1
+          fi

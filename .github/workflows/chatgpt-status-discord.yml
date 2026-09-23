@@ -1,0 +1,168 @@
+name: ChatGPT status to Discord
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".chatgpt/status.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chatgpt-status-discord-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  status-notification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout status history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Validate status and prepare notification
+        id: status
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          PAYLOAD_FILE: ${{ runner.temp }}/quietlink-discord-payload.json
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          status_path = pathlib.Path(".chatgpt/status.json")
+          data = json.loads(status_path.read_text(encoding="utf-8"))
+
+          required = ("project", "status", "task", "summary", "updated_at", "artifact")
+          missing = [k for k in required if k not in data]
+          if missing:
+              raise SystemExit("Missing required status fields: " + ", ".join(missing))
+
+          state = data["status"]
+          valid = {"working", "complete", "partial", "blocked"}
+          if state not in valid:
+              raise SystemExit("Invalid status value: " + repr(state))
+
+          for key, limit in (("project", 80), ("task", 300),
+                             ("summary", 1000), ("updated_at", 80)):
+              value = data[key]
+              if not isinstance(value, str) or not value.strip():
+                  raise SystemExit(f"{key} must be a non-empty string")
+              if len(value) > limit:
+                  raise SystemExit(f"{key} is too long")
+
+          artifact = data["artifact"]
+          if artifact is not None:
+              if not isinstance(artifact, str):
+                  raise SystemExit("artifact must be null or a string")
+              if len(artifact) > 500:
+                  raise SystemExit("artifact is too long")
+
+          final_states = {"complete", "partial", "blocked"}
+          should_notify = state in final_states
+          reason = "final_state" if should_notify else "working_state"
+
+          # A GitHub Actions re-run of the same status commit should not ping twice.
+          if should_notify and os.environ.get("RUN_ATTEMPT", "1") != "1":
+              should_notify = False
+              reason = "workflow_rerun"
+
+          # If a new commit only touches updated_at while the effective final
+          # notification content is unchanged, suppress the duplicate.
+          before = os.environ.get("BEFORE_SHA", "")
+          zero = "0" * 40
+          if should_notify and before and before != zero:
+              try:
+                  raw = subprocess.check_output(
+                      ["git", "show", f"{before}:.chatgpt/status.json"],
+                      text=True,
+                      stderr=subprocess.DEVNULL,
+                  )
+                  previous = json.loads(raw)
+                  keys = ("project", "status", "task", "summary", "artifact")
+                  if all(previous.get(k) == data.get(k) for k in keys):
+                      should_notify = False
+                      reason = "duplicate_final_content"
+              except Exception:
+                  pass
+
+          emoji = {
+              "complete": "✅",
+              "partial": "🟡",
+              "blocked": "🔴",
+          }
+
+          if state in final_states:
+              lines = [
+                  f"{emoji[state]} {data['project']} — {state.upper()}",
+                  data["task"].strip(),
+                  data["summary"].strip(),
+              ]
+              if artifact and artifact.strip():
+                  lines.append("Artifact: " + artifact.strip())
+              content = "\n".join(lines)
+              if len(content) > 1900:
+                  raise SystemExit("Discord message would exceed safe length")
+              payload = {
+                  "content": content,
+                  "allowed_mentions": {"parse": []},
+              }
+              pathlib.Path(os.environ["PAYLOAD_FILE"]).write_text(
+                  json.dumps(payload, separators=(",", ":")),
+                  encoding="utf-8",
+              )
+
+          output = pathlib.Path(os.environ["GITHUB_OUTPUT"])
+          with output.open("a", encoding="utf-8") as f:
+              f.write(f"state={state}\n")
+              f.write(f"should_notify={'true' if should_notify else 'false'}\n")
+              f.write(f"reason={reason}\n")
+
+          print(f"Status: {state}")
+          print(f"Discord notification: {'yes' if should_notify else 'no'} ({reason})")
+          PY
+
+      - name: Require Discord webhook for final states
+        if: steps.status.outputs.should_notify == 'true'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "::error::DISCORD_WEBHOOK repository secret is not configured."
+            exit 1
+          fi
+
+      - name: Send final status to Discord
+        if: steps.status.outputs.should_notify == 'true'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          PAYLOAD_FILE: ${{ runner.temp }}/quietlink-discord-payload.json
+        run: |
+          curl --silent --show-error --fail-with-body \
+            -H "Content-Type: application/json" \
+            --data-binary "@$PAYLOAD_FILE" \
+            "$DISCORD_WEBHOOK" \
+            >/dev/null
+
+      - name: Write workflow summary
+        if: always()
+        env:
+          STATE: ${{ steps.status.outputs.state }}
+          SHOULD_NOTIFY: ${{ steps.status.outputs.should_notify }}
+          REASON: ${{ steps.status.outputs.reason }}
+        run: |
+          {
+            echo "### QuietLink task status"
+            echo
+            echo "- State: `$STATE`"
+            echo "- Discord notification attempted: `$SHOULD_NOTIFY`"
+            echo "- Reason: `$REASON`"
+          } >> "$GITHUB_STEP_SUMMARY"

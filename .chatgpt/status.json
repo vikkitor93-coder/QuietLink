@@ -1,0 +1,8 @@
+{
+  "project": "QuietLink",
+  "status": "working",
+  "task": "Complete Android signing-key remediation",
+  "summary": "v0.3.47 is live with the new v2 signer; legacy build artifacts are purged. Waiting only for both phones to confirm the in-place v0.3.47 update before force-rewriting exposed Git history.",
+  "updated_at": "2026-09-23T01:28:00Z",
+  "artifact": "QuietLink v0.3.47"
+}

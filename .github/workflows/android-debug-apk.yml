@@ -1,0 +1,223 @@
+name: Build QuietLink signed APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, h264-720p30-v0314 ]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      NEW_SIGNER_SHA256: da4ff75b61d65a3ff1c335bf87a2173c63bb031711faebfded2b965fb1c851b1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK 36
+        run: |
+          SDKMANAGER="/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Validate rendezvous server
+        run: |
+          node --check rendezvous/server.js
+          python3 -m py_compile rendezvous/pi/server.py rendezvous/pi/smoke_test.py
+          python3 rendezvous/pi/smoke_test.py
+
+      - name: Run core crypto smoke test
+        run: |
+          mkdir -p build/core-test
+          javac -d build/core-test \
+            app/src/main/java/is/quietlink/app/Pairing.java \
+            app/src/main/java/is/quietlink/app/CryptoChannel.java \
+            tools/CoreCryptoTest.java
+          java -cp build/core-test is.quietlink.app.CoreCryptoTest
+
+      - name: Apply build version
+        run: |
+          source version.properties
+          sed -i -E "s/versionCode = [0-9]+/versionCode = $VERSION_CODE/" app/build.gradle.kts
+          sed -i -E "s/versionName = \"[^\"]+\"/versionName = \"$VERSION_NAME\"/" app/build.gradle.kts
+          grep -E "version(Code|Name)" app/build.gradle.kts
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+
+      - name: Reconstruct v2 signing material
+        env:
+          QUIETLINK_SIGNING_KEY_B64: ${{ secrets.QUIETLINK_SIGNING_KEY_B64 }}
+          QUIETLINK_SIGNING_STORE_PASSWORD: ${{ secrets.QUIETLINK_SIGNING_STORE_PASSWORD }}
+          QUIETLINK_SIGNING_KEY_ALIAS: ${{ secrets.QUIETLINK_SIGNING_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          test -n "$QUIETLINK_SIGNING_KEY_B64"
+          test -n "$QUIETLINK_SIGNING_STORE_PASSWORD"
+          test -n "$QUIETLINK_SIGNING_KEY_ALIAS"
+          printf '%s' "$QUIETLINK_SIGNING_KEY_B64" | base64 --decode > "$RUNNER_TEMP/quietlink-v2.p12"
+          base64 --decode signing/quietlink-v2-lineage.b64 > "$RUNNER_TEMP/quietlink-signing-lineage"
+          chmod 600 "$RUNNER_TEMP/quietlink-v2.p12"
+          test -s "$RUNNER_TEMP/quietlink-v2.p12"
+          test -s "$RUNNER_TEMP/quietlink-signing-lineage"
+          ACTUAL="$(keytool -list -v \
+            -keystore "$RUNNER_TEMP/quietlink-v2.p12" \
+            -storetype PKCS12 \
+            -storepass "$QUIETLINK_SIGNING_STORE_PASSWORD" \
+            -alias "$QUIETLINK_SIGNING_KEY_ALIAS" |
+            sed -n 's/^[[:space:]]*SHA256: //p' |
+            tr -d ':' |
+            tr 'A-F' 'a-f' |
+            head -n1)"
+          test "$ACTUAL" = "$NEW_SIGNER_SHA256"
+          echo "Secret-held v2 signer verified."
+
+      - name: Build unsigned release APK
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Sign with v2 key and Android rotation lineage
+        env:
+          QUIETLINK_SIGNING_STORE_PASSWORD: ${{ secrets.QUIETLINK_SIGNING_STORE_PASSWORD }}
+          QUIETLINK_SIGNING_KEY_PASSWORD: ${{ secrets.QUIETLINK_SIGNING_KEY_PASSWORD }}
+          QUIETLINK_SIGNING_KEY_ALIAS: ${{ secrets.QUIETLINK_SIGNING_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          INPUT="app/build/outputs/apk/release/app-release-unsigned.apk"
+          OUTPUT="QuietLink-v$VERSION_NAME-stable-signed.apk"
+          test -s "$INPUT"
+          "$APKSIGNER" sign \
+            --ks "$RUNNER_TEMP/quietlink-v2.p12" \
+            --ks-type PKCS12 \
+            --ks-key-alias "$QUIETLINK_SIGNING_KEY_ALIAS" \
+            --ks-pass env:QUIETLINK_SIGNING_STORE_PASSWORD \
+            --key-pass env:QUIETLINK_SIGNING_KEY_PASSWORD \
+            --lineage "$RUNNER_TEMP/quietlink-signing-lineage" \
+            --rotation-min-sdk-version 28 \
+            --v1-signing-enabled false \
+            --v2-signing-enabled false \
+            --v3-signing-enabled true \
+            --v4-signing-enabled false \
+            --out "$OUTPUT" \
+            "$INPUT"
+          "$APKSIGNER" verify --min-sdk-version 28 --verbose --print-certs "$OUTPUT" \
+            | tee build/apksigner-verification.txt
+          grep -qi "$NEW_SIGNER_SHA256" build/apksigner-verification.txt
+          echo "Signed APK verified with pinned v2 signer."
+
+      - name: Prepare deliverables
+        run: |
+          zip -qr "QuietLink-source-v$VERSION_NAME.zip" . \
+            -x ".git/*" "app/build/*" "build/*" "QuietLink-source-*.zip" "QuietLink-v*-stable-signed.apk"
+
+      - name: Remove private runner material
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/quietlink-v2.p12"
+          rm -f "$RUNNER_TEMP/quietlink-signing-lineage"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuietLink-v${{ env.VERSION_NAME }}-apk
+          path: QuietLink-v${{ env.VERSION_NAME }}-stable-signed.apk
+          if-no-files-found: error
+
+      - name: Upload source
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuietLink-v${{ env.VERSION_NAME }}-source
+          path: QuietLink-source-v${{ env.VERSION_NAME }}.zip
+          if-no-files-found: error
+
+  publish-update:
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'QuietLink v') }}
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version
+        run: |
+          source version.properties
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+
+      - name: Download signed APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: QuietLink-v*-apk
+          merge-multiple: true
+          path: update-input
+
+      - name: Build update feed
+        run: |
+          mkdir -p update-site
+          cp "update-input/QuietLink-v$VERSION_NAME-stable-signed.apk" update-site/QuietLink-latest.apk
+          SHA256="$(sha256sum update-site/QuietLink-latest.apk | awk '{print $1}')"
+          export SHA256
+          python3 - <<'PY'
+          import json, os
+          version_name = os.environ["VERSION_NAME"]
+          version_code = int(os.environ["VERSION_CODE"])
+          data = {
+              "versionCode": version_code,
+              "versionName": version_name,
+              "apkUrl": "https://vikkitor93-coder.github.io/QuietLink/QuietLink-latest.apk",
+              "sha256": os.environ["SHA256"],
+              "notes": (open("update-notes.txt", "r", encoding="utf-8").read().strip()
+                        if os.path.exists("update-notes.txt")
+                        else "QuietLink v%s" % version_name)
+          }
+          with open("update-site/update.json", "w", encoding="utf-8") as f:
+              json.dump(data, f, separators=(",", ":"))
+          online = {
+              "service": "quietlink-online",
+              "status": "ok",
+              "onlineCallsAvailable": False,
+              "rendezvousUrl": "",
+              "phase": "rendezvous-bootstrap",
+              "message": (
+                  "QuietLink online service is reachable, but internet peer calling "
+                  "is not enabled yet. Local connections remain available."
+              )
+          }
+          with open("update-site/online-status.json", "w", encoding="utf-8") as f:
+              json.dump(online, f, separators=(",", ":"))
+          with open("update-site/index.html", "w", encoding="utf-8") as f:
+              f.write("<!doctype html><meta charset=utf-8><title>QuietLink updates</title><p>QuietLink update service.</p>")
+          PY
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload update feed
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: update-site
+
+      - name: Publish update feed
+        id: deployment
+        uses: actions/deploy-pages@v4

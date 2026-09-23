@@ -1,0 +1,80 @@
+name: Purge compromised signing history
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/purge-history-now.txt"
+
+permissions:
+  contents: write
+
+jobs:
+  rewrite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout complete repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Verify explicit purge authorization
+        run: |
+          set -euo pipefail
+          test -f .github/purge-history-now.txt
+          test "$(cat .github/purge-history-now.txt)" = "PURGE_EXPOSED_SIGNING_HISTORY_AFTER_V2_MIGRATION"
+          test ! -e app/quietlink-debug.jks
+          ! grep -q 'storePassword[[:space:]]*=' app/build.gradle.kts
+          ! grep -q 'keyPassword[[:space:]]*=' app/build.gradle.kts
+          echo "Purge authorization and cleaned current tree verified."
+
+      - name: Create clean orphan root from current source
+        run: |
+          set -euo pipefail
+          git config user.name "QuietLink Security Migration"
+          git config user.email "actions@users.noreply.github.com"
+
+          # Keep the current source exactly, except the one-shot trigger file.
+          rm -f .github/purge-history-now.txt
+
+          git checkout --orphan quietlink-sanitized-root
+          git add -A
+          git commit -m "QuietLink sanitized history root after signer rotation"
+
+          ROOT_SHA="$(git rev-parse HEAD)"
+          echo "ROOT_SHA=$ROOT_SHA" >> "$GITHUB_ENV"
+          echo "Created sanitized root $ROOT_SHA"
+
+          test ! -e app/quietlink-debug.jks
+          ! git grep -n 'storePassword[[:space:]]*=' HEAD -- app/build.gradle.kts
+          ! git grep -n 'keyPassword[[:space:]]*=' HEAD -- app/build.gradle.kts
+
+      - name: Force all live branches to sanitized root
+        run: |
+          set -euo pipefail
+          for branch in main h264-720p30-v0314 online-rendezvous-v038 online-status-v037 online-stun-v039; do
+            echo "Rewriting $branch -> $ROOT_SHA"
+            git push --force origin "$ROOT_SHA:refs/heads/$branch"
+          done
+
+      - name: Verify remote branch tips
+        run: |
+          set -euo pipefail
+          for branch in main h264-720p30-v0314 online-rendezvous-v038 online-status-v037 online-stun-v039; do
+            remote_sha="$(git ls-remote origin "refs/heads/$branch" | awk '{print $1}')"
+            test "$remote_sha" = "$ROOT_SHA"
+          done
+          echo "All live branches now point to the sanitized root."
+
+      - name: Summary
+        run: |
+          {
+            echo "### QuietLink signing-history purge"
+            echo
+            echo "- All live branches force-rewritten to one sanitized root."
+            echo "- Exposed signing keystore/password history is no longer reachable from live branch refs."
+            echo "- Follow-up full-history audit is still required."
+          } >> "$GITHUB_STEP_SUMMARY"

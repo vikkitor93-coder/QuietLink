@@ -1,0 +1,1 @@
+Security signer rotation: QuietLink is now signed by the new private v2 release key using Android's authenticated old→v2 signing lineage. The exposed old signing key is no longer used by normal CI. Install this update on every existing QuietLink device before the public Git history is rewritten.
