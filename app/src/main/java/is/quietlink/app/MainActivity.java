@@ -44,6 +44,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     private LinearLayout floatingVideoControls;
     private View fullscreenBackButton;
     private View fullscreenRotateButton;
+    private int quickRotationWindow = 1; // 1 = main/incoming, 2 = mini/my camera
     private final List<View> fullscreenHiddenViews = new ArrayList<>();
     private final List<Integer> fullscreenHiddenVisibility = new ArrayList<>();
     private LinearLayout.LayoutParams savedInlineVideoLayout;
@@ -941,7 +942,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
         LinearLayout header = row();
         header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = text("ROTATE ONLY", 14, Color.WHITE, true);
+        TextView title = text("VIDEO TUNE", 14, Color.WHITE, true);
         header.addView(title, new LinearLayout.LayoutParams(0,-2,1f));
 
         Button full = secondary("FULL LAB");
@@ -960,99 +961,237 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         header.addView(close, closeLp);
         box.addView(header, lp(-1,dp(36),0,0,0,3));
 
-        TextView current = text(
-                "TX " + RotationLabConfig.forcedLabel(RotationLabConfig.forcedTxRotation(this))
-                        + "  •  RX "
-                        + RotationLabConfig.remoteModeLabel(RotationLabConfig.remoteMode(this))
-                        + " +" + RotationLabConfig.remoteOffset(this) + "°"
-                        + "  •  " + RotationLabConfig.previewLabel(
-                            RotationLabConfig.localPreviewMode(this)),
-                9, Color.LTGRAY, false);
-        box.addView(current, lp(-1,-2,0,0,0,4));
+        addWindowSelector(box, dialog);
 
-        addQuickRotationChoices(box, "SENDER",
-                new String[]{"AUTO","0°","90°","180°","270°"},
-                forcedRotationChoiceIndex(),
-                index -> RotationLabConfig.setForcedTxRotation(
-                        this, index == 0 ? -1 : (index - 1) * 90),
-                dialog);
+        if (quickRotationWindow == 1) {
+            TextView current = text(
+                    "WINDOW 1 • MAIN / INCOMING"
+                            + "  •  "
+                            + RotationLabConfig.remoteModeLabel(
+                                RotationLabConfig.remoteMode(this))
+                            + " +" + RotationLabConfig.remoteOffset(this) + "°"
+                            + "  •  "
+                            + RotationLabConfig.aspectLabel(
+                                isFullscreenVideoRendering()
+                                    ? RotationLabConfig.fullscreenAspect(this)
+                                    : RotationLabConfig.remoteAspect(this)),
+                    9, Color.LTGRAY, true);
+            box.addView(current, lp(-1,-2,0,1,0,4));
 
-        addQuickRotationChoices(box, "REMOTE OFFSET",
-                new String[]{"0°","90°","180°","270°"},
-                RotationLabConfig.remoteOffset(this) / 90,
-                index -> RotationLabConfig.setRemoteOffset(this, index * 90),
-                dialog);
+            addQuickRotationChoices(box, "ROTATION OFFSET",
+                    new String[]{"0°","90°","180°","270°"},
+                    RotationLabConfig.remoteOffset(this) / 90,
+                    index -> RotationLabConfig.setRemoteOffset(this, index * 90),
+                    dialog);
 
-        addQuickRotationChoices(box, "REMOTE DIRECTION",
-                new String[]{"DIRECT","INVERSE"},
-                RotationLabConfig.remoteMode(this),
-                index -> RotationLabConfig.setRemoteMode(this, index),
-                dialog);
+            addQuickRotationChoices(box, "ROTATION DIRECTION",
+                    new String[]{"DIRECT","INVERSE"},
+                    RotationLabConfig.remoteMode(this),
+                    index -> RotationLabConfig.setRemoteMode(this, index),
+                    dialog);
 
-        addQuickRotationChoices(box, "FORMULA",
-                new String[]{"QL","ANDROID","WEBRTC","SENSOR"},
-                RotationLabConfig.txFormula(this),
-                index -> RotationLabConfig.setTxFormula(this, index),
-                dialog);
+            addQuickAspectSpinner(box, "ASPECT RATIO",
+                    isFullscreenVideoRendering()
+                            ? RotationLabConfig.fullscreenAspect(this)
+                            : RotationLabConfig.remoteAspect(this),
+                    mode -> {
+                        // Window 1 is the same incoming video in inline and
+                        // fullscreen layouts. Keep its tuning consistent across
+                        // both views so there is one obvious Window 1 control.
+                        RotationLabConfig.setRemoteAspect(this, mode);
+                        RotationLabConfig.setFullscreenAspect(this, mode);
+                    },
+                    dialog);
 
-        addQuickRotationChoices(box, "PREVIEW",
-                new String[]{"STREAM","DISPLAY","NONE","INVERSE"},
-                RotationLabConfig.localPreviewMode(this),
-                index -> RotationLabConfig.setLocalPreviewMode(this, index),
-                dialog);
+            LinearLayout toggles = row();
+            toggles.setGravity(Gravity.CENTER_VERTICAL);
+            toggles.addView(rotationQuickToggle(
+                    "FRAME RX", RotationLabConfig.acceptFrameRotation(this), v -> {
+                        RotationLabConfig.setAcceptFrameRotation(
+                                this, !RotationLabConfig.acceptFrameRotation(this));
+                        applyRotationLabNow();
+                        refreshQuickRotationPanelAtSameScroll(box, dialog);
+                    }), new LinearLayout.LayoutParams(0,dp(34),1f));
+            box.addView(toggles, lp(-1,dp(34),0,4,0,0));
+        } else {
+            TextView current = text(
+                    "WINDOW 2 • MINI / MY CAMERA"
+                            + "  •  "
+                            + RotationLabConfig.previewLabel(
+                                RotationLabConfig.localPreviewMode(this))
+                            + " +" + RotationLabConfig.localPreviewOffset(this) + "°"
+                            + "  •  "
+                            + RotationLabConfig.aspectLabel(
+                                RotationLabConfig.localAspect(this)),
+                    9, Color.LTGRAY, true);
+            box.addView(current, lp(-1,-2,0,1,0,4));
 
-        addQuickRotationChoices(box, "SOURCE",
-                new String[]{"DISPLAY","PHYSICAL"},
-                RotationLabConfig.rotationSource(this),
-                index -> RotationLabConfig.setRotationSource(this, index),
-                dialog);
+            addQuickRotationChoices(box, "MINI ROTATION BASE",
+                    new String[]{"STREAM","DISPLAY","NONE","INVERSE"},
+                    RotationLabConfig.localPreviewMode(this),
+                    index -> RotationLabConfig.setLocalPreviewMode(this, index),
+                    dialog);
 
-        addQuickRotationChoices(box, "LOCAL ASPECT",
-                new String[]{"AUTO","16:9","4:3","3:2","1:1","STRETCH"},
-                RotationLabConfig.localAspect(this),
-                index -> RotationLabConfig.setLocalAspect(this, index),
-                dialog);
+            addQuickRotationChoices(box, "MINI ROTATION OFFSET",
+                    new String[]{"0°","90°","180°","270°"},
+                    RotationLabConfig.localPreviewOffset(this) / 90,
+                    index -> RotationLabConfig.setLocalPreviewOffset(this, index * 90),
+                    dialog);
 
-        addQuickRotationChoices(box, "REMOTE ASPECT",
-                new String[]{"AUTO","16:9","4:3","3:2","1:1","STRETCH"},
-                RotationLabConfig.remoteAspect(this),
-                index -> RotationLabConfig.setRemoteAspect(this, index),
-                dialog);
+            addQuickAspectSpinner(box, "MINI ASPECT RATIO",
+                    RotationLabConfig.localAspect(this),
+                    mode -> RotationLabConfig.setLocalAspect(this, mode),
+                    dialog);
 
-        addQuickRotationChoices(box, "FULLSCREEN ASPECT",
-                new String[]{"AUTO","16:9","4:3","3:2","1:1","STRETCH"},
-                RotationLabConfig.fullscreenAspect(this),
-                index -> RotationLabConfig.setFullscreenAspect(this, index),
-                dialog);
+            LinearLayout previewToggles = row();
+            previewToggles.setGravity(Gravity.CENTER_VERTICAL);
+            previewToggles.addView(rotationQuickToggle(
+                    "MIRROR", RotationLabConfig.mirrorLocalPreview(this), v -> {
+                        RotationLabConfig.setMirrorLocalPreview(
+                                this, !RotationLabConfig.mirrorLocalPreview(this));
+                        applyRotationLabNow();
+                        refreshQuickRotationPanelAtSameScroll(box, dialog);
+                    }), new LinearLayout.LayoutParams(0,dp(34),1f));
+            box.addView(previewToggles, lp(-1,dp(34),0,4,0,3));
 
-        LinearLayout toggles = row();
-        toggles.setGravity(Gravity.CENTER_VERTICAL);
-        toggles.addView(rotationQuickToggle(
-                "FRAME TX", RotationLabConfig.sendFrameRotation(this), v -> {
-                    RotationLabConfig.setSendFrameRotation(
-                            this, !RotationLabConfig.sendFrameRotation(this));
-                    applyRotationLabNow();
-                    refreshQuickRotationPanelAtSameScroll(box, dialog);
-                }), new LinearLayout.LayoutParams(0,dp(34),1f));
-        LinearLayout.LayoutParams toggleLp = new LinearLayout.LayoutParams(0,dp(34),1f);
-        toggleLp.setMargins(dp(4),0,0,0);
-        toggles.addView(rotationQuickToggle(
-                "FRAME RX", RotationLabConfig.acceptFrameRotation(this), v -> {
-                    RotationLabConfig.setAcceptFrameRotation(
-                            this, !RotationLabConfig.acceptFrameRotation(this));
-                    applyRotationLabNow();
-                    refreshQuickRotationPanelAtSameScroll(box, dialog);
-                }), toggleLp);
-        LinearLayout.LayoutParams mirrorLp = new LinearLayout.LayoutParams(0,dp(34),1f);
-        mirrorLp.setMargins(dp(4),0,0,0);
-        toggles.addView(rotationQuickToggle(
-                "MIRROR", RotationLabConfig.mirrorLocalPreview(this), v -> {
-                    RotationLabConfig.setMirrorLocalPreview(
-                            this, !RotationLabConfig.mirrorLocalPreview(this));
-                    applyRotationLabNow();
-                    refreshQuickRotationPanelAtSameScroll(box, dialog);
-                }), mirrorLp);
-        box.addView(toggles, lp(-1,dp(34),0,4,0,0));
+            TextView sender = text("SEND THIS CAMERA TO THE OTHER PHONE",
+                    8, muted(), true);
+            box.addView(sender, lp(-1,-2,0,4,0,1));
+
+            addQuickRotationChoices(box, "SENDER ROTATION",
+                    new String[]{"AUTO","0°","90°","180°","270°"},
+                    forcedRotationChoiceIndex(),
+                    index -> RotationLabConfig.setForcedTxRotation(
+                            this, index == 0 ? -1 : (index - 1) * 90),
+                    dialog);
+
+            addQuickRotationChoices(box, "SENDER FORMULA",
+                    new String[]{"QL","ANDROID","WEBRTC","SENSOR"},
+                    RotationLabConfig.txFormula(this),
+                    index -> RotationLabConfig.setTxFormula(this, index),
+                    dialog);
+
+            addQuickRotationChoices(box, "ROTATION SOURCE",
+                    new String[]{"DISPLAY","PHYSICAL"},
+                    RotationLabConfig.rotationSource(this),
+                    index -> RotationLabConfig.setRotationSource(this, index),
+                    dialog);
+
+            LinearLayout txToggle = row();
+            txToggle.setGravity(Gravity.CENTER_VERTICAL);
+            txToggle.addView(rotationQuickToggle(
+                    "FRAME TX", RotationLabConfig.sendFrameRotation(this), v -> {
+                        RotationLabConfig.setSendFrameRotation(
+                                this, !RotationLabConfig.sendFrameRotation(this));
+                        applyRotationLabNow();
+                        refreshQuickRotationPanelAtSameScroll(box, dialog);
+                    }), new LinearLayout.LayoutParams(0,dp(34),1f));
+            box.addView(txToggle, lp(-1,dp(34),0,4,0,0));
+        }
+    }
+
+    private void addWindowSelector(LinearLayout box, android.app.Dialog dialog) {
+        LinearLayout line = row();
+        line.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView label = text("WINDOW", 9, muted(), true);
+        line.addView(label, new LinearLayout.LayoutParams(0,-2,1f));
+
+        Spinner spinner = new Spinner(this);
+        String[] windows = {
+                "1 • MAIN / INCOMING",
+                "2 • MINI / MY CAMERA"
+        };
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_item, windows);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        spinner.setSelection(quickRotationWindow == 2 ? 1 : 0, false);
+        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(
+                    AdapterView<?> parent, View view, int position, long id) {
+                int next = position == 1 ? 2 : 1;
+                if (quickRotationWindow == next) return;
+                quickRotationWindow = next;
+                populateQuickRotationPanel(box, dialog);
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        line.addView(spinner, new LinearLayout.LayoutParams(dp(210),dp(42)));
+        box.addView(line, lp(-1,dp(42),0,0,0,3));
+    }
+
+    private String[] quickAspectLabels() {
+        return new String[] {
+                "AUTO",
+                "16:9", "9:16",
+                "4:3", "3:4",
+                "3:2", "2:3",
+                "5:4", "4:5",
+                "1:1",
+                "STRETCH"
+        };
+    }
+
+    private int[] quickAspectModes() {
+        return new int[] {
+                RotationLabConfig.ASPECT_AUTO,
+                RotationLabConfig.ASPECT_16_9,
+                RotationLabConfig.ASPECT_9_16,
+                RotationLabConfig.ASPECT_4_3,
+                RotationLabConfig.ASPECT_3_4,
+                RotationLabConfig.ASPECT_3_2,
+                RotationLabConfig.ASPECT_2_3,
+                RotationLabConfig.ASPECT_5_4,
+                RotationLabConfig.ASPECT_4_5,
+                RotationLabConfig.ASPECT_1_1,
+                RotationLabConfig.ASPECT_STRETCH
+        };
+    }
+
+    private int quickAspectChoiceIndex(int mode) {
+        int[] modes = quickAspectModes();
+        for (int i = 0; i < modes.length; i++) {
+            if (modes[i] == mode) return i;
+        }
+        return 0;
+    }
+
+    private void addQuickAspectSpinner(LinearLayout box,
+                                       String label,
+                                       int selectedMode,
+                                       RotationLabChoice choice,
+                                       android.app.Dialog dialog) {
+        LinearLayout line = row();
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        line.addView(text(label, 8, muted(), true),
+                new LinearLayout.LayoutParams(0,-2,1f));
+
+        Spinner spinner = new Spinner(this);
+        String[] labels = quickAspectLabels();
+        int[] modes = quickAspectModes();
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_item, labels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        spinner.setSelection(quickAspectChoiceIndex(selectedMode), false);
+        final boolean[] armed = {false};
+        spinner.post(() -> armed[0] = true);
+        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(
+                    AdapterView<?> parent, View view, int position, long id) {
+                if (!armed[0]) return;
+                int safe = Math.max(0, Math.min(modes.length - 1, position));
+                int mode = modes[safe];
+                if (mode == selectedMode) return;
+                try { choice.apply(mode); } catch (Exception ignored) {}
+                applyRotationLabNow();
+                refreshQuickRotationPanelAtSameScroll(box, dialog);
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        line.addView(spinner, new LinearLayout.LayoutParams(dp(150),dp(42)));
+        box.addView(line, lp(-1,dp(42),0,2,0,2));
     }
 
     private Button rotationQuickToggle(String label,
@@ -1120,6 +1259,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                         + RotationLabConfig.sourceLabel(RotationLabConfig.rotationSource(this)),
                 "Local preview transform • "
                         + RotationLabConfig.previewLabel(RotationLabConfig.localPreviewMode(this)),
+                "Local preview rotation offset • +"
+                        + RotationLabConfig.localPreviewOffset(this) + "°",
                 "Local front mirror • "
                         + (RotationLabConfig.mirrorLocalPreview(this) ? "ON" : "OFF"),
                 "Per-frame H.264 rotation TX • "
@@ -1179,58 +1320,60 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                             },
                             RotationLabConfig.localPreviewMode(this),
                             index -> RotationLabConfig.setLocalPreviewMode(this, index));
-                    else if (which == 4) {
+                    else if (which == 4) showRotationLabChoice(
+                            "Local preview rotation offset",
+                            new String[] {"+0°", "+90°", "+180°", "+270°"},
+                            RotationLabConfig.localPreviewOffset(this) / 90,
+                            index -> RotationLabConfig.setLocalPreviewOffset(this, index * 90));
+                    else if (which == 5) {
                         RotationLabConfig.setMirrorLocalPreview(
                                 this, !RotationLabConfig.mirrorLocalPreview(this));
                         applyRotationLabNow();
                         showVideoRotationLab();
-                    } else if (which == 5) {
+                    } else if (which == 6) {
                         RotationLabConfig.setSendFrameRotation(
                                 this, !RotationLabConfig.sendFrameRotation(this));
                         applyRotationLabNow();
                         showVideoRotationLab();
-                    } else if (which == 6) {
+                    } else if (which == 7) {
                         RotationLabConfig.setAcceptFrameRotation(
                                 this, !RotationLabConfig.acceptFrameRotation(this));
                         applyRotationLabNow();
                         showVideoRotationLab();
-                    } else if (which == 7) showRotationLabChoice(
+                    } else if (which == 8) showRotationLabChoice(
                             "Force H.264 sender rotation",
                             new String[] {"Auto", "0°", "90°", "180°", "270°"},
                             forcedRotationChoiceIndex(),
                             index -> RotationLabConfig.setForcedTxRotation(
                                     this, index == 0 ? -1 : (index - 1) * 90));
-                    else if (which == 8) showRotationLabChoice(
+                    else if (which == 9) showRotationLabChoice(
                             "Remote rotation direction",
                             new String[] {"Direct", "Inverse • 360° − reported"},
                             RotationLabConfig.remoteMode(this),
                             index -> RotationLabConfig.setRemoteMode(this, index));
-                    else if (which == 9) showRotationLabChoice(
+                    else if (which == 10) showRotationLabChoice(
                             "Remote rotation offset",
                             new String[] {"+0°", "+90°", "+180°", "+270°"},
                             RotationLabConfig.remoteOffset(this) / 90,
                             index -> RotationLabConfig.setRemoteOffset(this, index * 90));
-                    else if (which == 10) {
+                    else if (which == 11) {
                         RotationLabConfig.setForceJpeg(
                                 this, !RotationLabConfig.forceJpeg(this));
                         applyRotationLabNow();
                         showVideoRotationLab();
-                    } else if (which == 11) showRotationLabChoice(
+                    } else if (which == 12) showAspectLabChoice(
                             "Local preview aspect",
-                            new String[] {"Auto", "16:9", "4:3", "3:2", "1:1", "Stretch"},
                             RotationLabConfig.localAspect(this),
-                            index -> RotationLabConfig.setLocalAspect(this, index));
-                    else if (which == 12) showRotationLabChoice(
+                            mode -> RotationLabConfig.setLocalAspect(this, mode));
+                    else if (which == 13) showAspectLabChoice(
                             "Remote inline aspect",
-                            new String[] {"Auto", "16:9", "4:3", "3:2", "1:1", "Stretch"},
                             RotationLabConfig.remoteAspect(this),
-                            index -> RotationLabConfig.setRemoteAspect(this, index));
-                    else if (which == 13) showRotationLabChoice(
+                            mode -> RotationLabConfig.setRemoteAspect(this, mode));
+                    else if (which == 14) showAspectLabChoice(
                             "Fullscreen remote aspect",
-                            new String[] {"Auto", "16:9", "4:3", "3:2", "1:1", "Stretch"},
                             RotationLabConfig.fullscreenAspect(this),
-                            index -> RotationLabConfig.setFullscreenAspect(this, index));
-                    else if (which == 14) {
+                            mode -> RotationLabConfig.setFullscreenAspect(this, mode));
+                    else if (which == 15) {
                         showRotationLabInstructions();
                     } else {
                         RotationLabConfig.resetProduction(this);
@@ -1282,6 +1425,27 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 .show();
     }
 
+    private void showAspectLabChoice(String title,
+                                     int selectedMode,
+                                     RotationLabChoice choice) {
+        String[] labels = quickAspectLabels();
+        int[] modes = quickAspectModes();
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(title)
+                .setSingleChoiceItems(
+                        labels,
+                        quickAspectChoiceIndex(selectedMode),
+                        (dialog, which) -> {
+                            int safe = Math.max(0, Math.min(modes.length - 1, which));
+                            try { choice.apply(modes[safe]); } catch (Exception ignored) {}
+                            dialog.dismiss();
+                            applyRotationLabNow();
+                            showVideoRotationLab();
+                        })
+                .setNegativeButton("Back", (dialog, which) -> showVideoRotationLab())
+                .show();
+    }
+
     private int forcedRotationChoiceIndex() {
         int forced = RotationLabConfig.forcedTxRotation(this);
         return forced < 0 ? 0 : (forced / 90) + 1;
@@ -1292,6 +1456,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 "enabled=" + (RotationLabConfig.enabled(this) ? 1 : 0)
                         + " tx=" + RotationLabConfig.txFormula(this)
                         + " preview=" + RotationLabConfig.localPreviewMode(this)
+                        + " preview_offset=" + RotationLabConfig.localPreviewOffset(this)
                         + " remote_mode=" + RotationLabConfig.remoteMode(this)
                         + " remote_offset=" + RotationLabConfig.remoteOffset(this)
                         + " frame_tx=" + (RotationLabConfig.sendFrameRotation(this) ? 1 : 0)
@@ -2175,6 +2340,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             FrameLayout.LayoutParams stateLp = new FrameLayout.LayoutParams(-2,-2, Gravity.START | Gravity.TOP);
             stateLp.setMargins(dp(8),dp(8),dp(8),dp(8));
             videoFrame.addView(videoStateOverlay, stateLp);
+            addDevWindowBadge(videoFrame, "1",
+                    Gravity.CENTER_HORIZONTAL | Gravity.TOP);
 
             if (activeMode == SessionService.MODE_VIDEO
                     || activeMode == SessionService.MODE_BABY) {
@@ -2195,6 +2362,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             localPreview.setBackgroundColor(Color.TRANSPARENT);
             localPreview.setElevation(dp(8));
             previewFrame.addView(localPreview, new FrameLayout.LayoutParams(-1,-1));
+            addDevWindowBadge(previewFrame, "2",
+                    Gravity.START | Gravity.TOP);
 
             FrameLayout.LayoutParams previewLp = makeInlinePreviewLayoutParams();
             videoFrame.addView(previewFrame, previewLp);
@@ -3038,6 +3207,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 Gravity.START | Gravity.TOP);
         stateLp.setMargins(dp(10),dp(10),dp(10),dp(10));
         frame.addView(videoStateOverlay, stateLp);
+        addDevWindowBadge(frame, "1",
+                Gravity.CENTER_HORIZONTAL | Gravity.TOP);
 
         FrameLayout previewFrame = new FrameLayout(this);
         previewFrame.setBackgroundColor(Color.BLACK);
@@ -3049,6 +3220,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         localPreview.setScaleType(ImageView.ScaleType.FIT_CENTER);
         localPreview.setBackgroundColor(Color.TRANSPARENT);
         previewFrame.addView(localPreview, new FrameLayout.LayoutParams(-1,-1));
+        addDevWindowBadge(previewFrame, "2",
+                Gravity.START | Gravity.TOP);
         frame.addView(previewFrame, makeFullscreenPreviewLayoutParams());
 
         android.graphics.Bitmap shownRemote = devDummySession
@@ -3153,6 +3326,21 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         requestVideoWakeRefresh();
     }
 
+    private void addDevWindowBadge(FrameLayout parent,
+                                   String number,
+                                   int gravity) {
+        if (!devUnlocked || parent == null) return;
+        TextView badge = text(number, 11, Color.WHITE, true);
+        badge.setGravity(Gravity.CENTER);
+        badge.setBackground(makeRound(Color.argb(215, 35, 105, 185), 18));
+        badge.setElevation(dp(18));
+        badge.setContentDescription("Video window " + number);
+        FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(
+                dp(30), dp(30), gravity);
+        p.setMargins(dp(8),dp(8),dp(8),dp(8));
+        parent.addView(badge, p);
+    }
+
     private boolean localPreviewIsPortrait() {
         int r = RotationLabConfig.enabled(this)
                 ? RotationLabConfig.resolveLocalPreviewRotation(
@@ -3162,24 +3350,34 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     }
 
     private int[] localPreviewBoxDp() {
-        boolean portrait = localPreviewIsPortrait();
         int mode = RotationLabConfig.localAspect(this);
-        float ratio = RotationLabConfig.aspectRatio(mode);
-        int longSide = 160;
-        int shortSide = Math.max(72, Math.round(longSide / Math.max(1f, ratio)));
+        float ratio;
+
+        if (mode == RotationLabConfig.ASPECT_AUTO) {
+            // AUTO follows the effective local preview orientation.
+            ratio = localPreviewIsPortrait() ? (9f / 16f) : (16f / 9f);
+        } else if (RotationLabConfig.stretchAspect(mode)) {
+            ratio = localPreviewIsPortrait() ? (9f / 16f) : (16f / 9f);
+        } else {
+            // Explicit ratios are literal WIDTH:HEIGHT. 16:9 remains wide and
+            // 9:16 remains tall; do not silently flip the user's selection.
+            ratio = RotationLabConfig.aspectRatio(mode);
+        }
 
         if (mode == RotationLabConfig.ASPECT_1_1) {
-            longSide = 128;
-            shortSide = 128;
-        }
-        if (RotationLabConfig.stretchAspect(mode)) {
-            shortSide = 90;
-            longSide = 160;
+            return new int[] {128, 128};
         }
 
-        return portrait
-                ? new int[] {shortSide, longSide}
-                : new int[] {longSide, shortSide};
+        int width;
+        int height;
+        if (ratio >= 1f) {
+            width = 160;
+            height = Math.max(64, Math.round(width / ratio));
+        } else {
+            height = 160;
+            width = Math.max(64, Math.round(height * ratio));
+        }
+        return new int[] {width, height};
     }
 
     private FrameLayout.LayoutParams makeInlinePreviewLayoutParams() {
@@ -3735,11 +3933,18 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             float preRotateHeight = quarterTurn ? width : height;
             matrix.setScale(preRotateWidth / width, preRotateHeight / height, cx, cy);
         } else {
-            float ratio = RotationLabConfig.aspectRatio(aspectMode);
-            float sourceWidth = ratio * 1000f;
-            float sourceHeight = 1000f;
-            float effectiveSourceWidth = quarterTurn ? sourceHeight : sourceWidth;
-            float effectiveSourceHeight = quarterTurn ? sourceWidth : sourceHeight;
+            float effectiveSourceWidth;
+            float effectiveSourceHeight;
+            if (aspectMode == RotationLabConfig.ASPECT_AUTO) {
+                effectiveSourceWidth = quarterTurn ? H264Codec.HEIGHT : H264Codec.WIDTH;
+                effectiveSourceHeight = quarterTurn ? H264Codec.WIDTH : H264Codec.HEIGHT;
+            } else {
+                // Explicit aspect is the FINAL visible WIDTH:HEIGHT after
+                // rotation, which makes 9:16 genuinely different from 16:9.
+                float ratio = RotationLabConfig.aspectRatio(aspectMode);
+                effectiveSourceWidth = ratio * 1000f;
+                effectiveSourceHeight = 1000f;
+            }
 
             float scale = crop
                     ? Math.max(width / effectiveSourceWidth, height / effectiveSourceHeight)

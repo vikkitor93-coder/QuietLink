@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "partial",
-  "task": "Validate restored internet CODE and fullscreen/aspect calibration",
-  "summary": "v0.3.56 built, signed, tested, and published successfully. Human test now needed: Wi-Fi-off mobile-data CODE session, fullscreen ROTATE access/X close, then Local/Remote/Fullscreen aspect calibration and landscape orientation.",
-  "updated_at": "2026-09-23T14:31:00Z",
-  "artifact": "QuietLink v0.3.56 APK"
+  "status": "working",
+  "task": "Separate video calibration by Window 1 and Window 2",
+  "summary": "v0.3.57 numbers the main incoming and mini/self windows, adds a Window 1/2 dropdown with per-window controls, adds independent mini rotation offset, and true portrait aspect ratios including 9:16. CI is next; internet CODE validation from v0.3.56 remains pending.",
+  "updated_at": "2026-09-23T16:34:00Z",
+  "artifact": "QuietLink v0.3.57"
 }

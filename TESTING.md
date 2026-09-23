@@ -295,3 +295,16 @@
 245. Mini-preview distortion test: use a face/circular object and compare 16:9, 4:3, 3:2, 1:1 until circles/facial proportions are visually correct on each phone; record the working local ratio.
 246. Fullscreen orientation matrix: portrait, landscape-left and landscape-right must be testable directly from the fullscreen ROTATE panel without closing fullscreen.
 
+247. v0.3.57 updater continuity: install on both phones through CHECK UPDATE from v0.3.56.
+248. Window identity: in a live visual session with developer mode enabled, the large incoming video must show badge **1** and the mini/self preview must show badge **2**.
+249. Window dropdown: open ROTATE/VIDEO TUNE and switch the Window selector between **1 • MAIN / INCOMING** and **2 • MINI / MY CAMERA**; the visible control set must change without closing the panel.
+250. Window 1 isolation: change incoming rotation offset/direction/aspect and confirm the main incoming window changes while the mini/self window settings remain unchanged.
+251. Window 1 fullscreen continuity: enter fullscreen and verify the same Window 1 rotation/aspect setting remains active; changes made fullscreen must still apply after returning inline.
+252. Window 2 isolation: change mini rotation base/offset/aspect/mirror and confirm the mini/self window changes without changing Window 1 incoming presentation.
+253. Window 2 manual offset: +0/+90/+180/+270 must independently fine-tune the mini preview after its selected Stream/Display/None/Inverse base.
+254. Portrait aspect menu: Window 2 must offer at least 9:16, 3:4, 2:3 and 4:5 in addition to landscape reciprocal ratios.
+255. Literal portrait ratio: select **9:16** for Window 2 and verify its container remains tall 9:16 even when the effective video rotation is 90/270; it must not silently become 16:9.
+256. Aspect sweep: compare Auto, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5 and 1:1 using a face/circle until proportions are correct. Stretch is diagnostic only.
+257. Sender section clarity: Window 2 must visibly separate the controls that affect the local mini preview from the **SEND THIS CAMERA TO THE OTHER PHONE** controls.
+258. Existing v0.3.56 internet regression checkpoint remains required: Wi-Fi-off/mobile-data CODE must start without a Wi-Fi/hotspot prerequisite.
+
