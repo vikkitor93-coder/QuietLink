@@ -1,7 +1,7 @@
 # QuietLink milestones
 
 Updated: 2026-09-23  
-Current release: **v0.3.54**  
+Current release: **v0.3.55**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -49,7 +49,10 @@ Source of truth: **GitHub main**
    - ✅ v0.3.52 older-Android documented legacy archive oldest-signer compatibility
    - ✅ v0.3.53 Sleeping Baby role-swap confirmation + source logging
    - ✅ v0.3.54 older-Android rotation-lab list rendering fix
-   - ⏳ Human: verify rotation controls render on older phone
+   - ✅ Portrait orientation manually corrected on both phones with rotation-lab settings
+   - ✅ v0.3.55 compact persistent ROTATE ONLY panel + self-preview aspect fix
+   - ⏳ Human: validate compact panel and landscape-left/right settings on both phones
+   - ✅ Human: rotation controls render on older phone
    - ✅ Human: CHECK UPDATE v0.3.52→v0.3.53 works on older phone
    - ✅ Human: older-phone Baby Station audio works again
    - ⏳ Human rotation matrix: identify correct front/back portrait/landscape settings on both phones
