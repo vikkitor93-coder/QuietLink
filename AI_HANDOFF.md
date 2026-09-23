@@ -5,7 +5,7 @@ Repository: **vikkitor93-coder/QuietLink**
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
 Current release: **v0.3.57 / versionCode 69**  
-Latest release CI: **pending v0.3.57 validation**
+Latest release CI: **passed**
 
 ---
 
