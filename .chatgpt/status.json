@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "working",
-  "task": "Restore internet CODE and expand fullscreen video calibration",
-  "summary": "v0.3.56 removes the incorrect local-Wi-Fi prerequisite from CODE sessions, scopes Wi-Fi warnings to Nearby/Known, adds fullscreen ROTATE access and explicit transform refresh, and adds Local/Remote/Fullscreen aspect-ratio controls. CI is next.",
-  "updated_at": "2026-09-23T14:10:00Z",
-  "artifact": "QuietLink v0.3.56"
+  "status": "partial",
+  "task": "Validate restored internet CODE and fullscreen/aspect calibration",
+  "summary": "v0.3.56 built, signed, tested, and published successfully. Human test now needed: Wi-Fi-off mobile-data CODE session, fullscreen ROTATE access/X close, then Local/Remote/Fullscreen aspect calibration and landscape orientation.",
+  "updated_at": "2026-09-23T14:31:00Z",
+  "artifact": "QuietLink v0.3.56 APK"
 }
