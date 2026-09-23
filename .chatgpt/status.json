@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "working",
-  "task": "Fix older-Android archive signer parsing",
-  "summary": "The older phone log proved installed SigningInfo is modern/v2 while downloaded rotated APK is exposed through deprecated legacy signatures. v0.3.52 adds the documented oldest-signer compatibility path with strict pins; rotation lab remains unchanged. CI is next.",
-  "updated_at": "2026-09-23T04:18:00Z",
-  "artifact": "QuietLink v0.3.52"
+  "status": "partial",
+  "task": "Validate v0.3.52 updater compatibility",
+  "summary": "v0.3.52 built, signed, tested, and published successfully. The older phone needs one manual in-place install because its current updater still has the old rejection logic; then continue the v0.3.51 rotation lab and verify the next release through CHECK UPDATE.",
+  "updated_at": "2026-09-23T04:22:00Z",
+  "artifact": "QuietLink v0.3.52 APK"
 }
