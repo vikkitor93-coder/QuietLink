@@ -1,7 +1,7 @@
 # QuietLink milestones
 
 Updated: 2026-09-23  
-Current release: **v0.3.48**  
+Current release: **v0.3.49**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -76,14 +76,21 @@ Source of truth: **GitHub main**
    - ✅ Production rendezvous URL published to normal QuietLink configuration
    - ✅ Local-first 1.5 s rendezvous fallback integration implemented
    - ✅ Saved developer override for the official URL auto-migrates to production behavior
-   - ⏳ Validate v0.3.48 normal CODE flow across Wi-Fi ↔ mobile data with no developer override
-   - ⏳ Direct internet P2P dialing/acceptance
+   - ✅ v0.3.48 normal CODE flow validated across Wi-Fi ↔ mobile data with no developer override
+   - ✅ Reliable opaque QL5 control relay implemented on Android + rendezvous server
+   - ✅ Relay sequencing / ACK / deduplication / bounded-backlog smoke coverage
+   - ✅ Direct encrypted UDP media candidate path + anonymous NAT warm-up implemented
+   - ⏳ Deploy v0.3.49 control-relay API to permanent Pi
+   - ⏳ Validate v0.3.49 encrypted cross-network Voice + bidirectional audio
+   - ⏳ Direct internet P2P dialing/acceptance validated on real networks
    - ⏳ Internet-path self-healing recovery
+   - ⏳ Encrypted media relay fallback for NATs that block direct UDP
 
 8. ⏳ Raspberry Pi rendezvous server
    - ✅ Pi promoted to the permanent rendezvous deployment
    - ✅ Stable production HTTPS hostname/tunnel
    - ✅ quietlink-rendezvous and cloudflared configured as systemd services
+   - ⏳ Deploy v0.3.49 opaque control-relay server update
    - ⏳ Reboot/power-loss automatic recovery validation
    - ⏳ Long-duration Android client validation against the permanent endpoint
    - ✅ Privacy-safe operational logging only
@@ -102,7 +109,7 @@ Source of truth: **GitHub main**
 
 ## Current truth
 
-v0.3.48 automatically uses the permanent Raspberry Pi/Cloudflare rendezvous in normal CODE host/join after a short local-first delay. Full direct internet session establishment and recovery remain under milestone 7.
+v0.3.48 production rendezvous matching is user-validated. v0.3.49 adds the first actual encrypted internet session path: QL5 control/chat through a bounded opaque relay plus direct encrypted UDP media. Permanent-Pi deployment and a real two-phone Voice/audio test are the next checkpoint; internet recovery and media relay fallback remain pending.
 
 The Online status dot remains conservative/red while `onlineCallsAvailable=false`, but the published status document now supplies the permanent production `rendezvousUrl` for automatic signaling.
 
