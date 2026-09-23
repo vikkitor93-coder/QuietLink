@@ -1,8 +1,8 @@
 {
   "project": "QuietLink",
-  "status": "partial",
-  "task": "Validate numbered per-window video calibration",
-  "summary": "v0.3.57 built, signed, tested, and published successfully. Human test now needed: verify Window 1/2 badges and dropdown, find the correct Window 2 portrait aspect (including 9:16), tune per-window rotation independently, and complete the pending Wi-Fi-off mobile-data CODE regression test.",
-  "updated_at": "2026-09-23T16:40:00Z",
-  "artifact": "QuietLink v0.3.57 APK"
+  "status": "working",
+  "task": "Persist video calibration profiles and transfer diagnostics in chat",
+  "summary": "v0.3.58 makes aspect selection scrollable, adds auto-loading Video/Baby Inline/Fullscreen calibration profiles with copyable summaries, and sends privacy-safe diagnostic logs as encrypted .txt chat attachments. CI is next.",
+  "updated_at": "2026-09-23T16:52:00Z",
+  "artifact": "QuietLink v0.3.58"
 }
