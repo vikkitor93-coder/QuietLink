@@ -355,6 +355,26 @@ final class UpdateManager {
             return;
         }
 
+        // Android documents that the deprecated PackageInfo.signatures API
+        // returns the OLDEST signer after a signing-certificate rotation so
+        // legacy callers appear as though no rotation occurred. Some older/OEM
+        // devices expose an archive exactly this way even though the installed
+        // package already exposes modern SigningInfo correctly.
+        //
+        // Accept only this narrow, pinned state:
+        //   installed current signer == QuietLink v2
+        //   downloaded archive legacy signer == original QuietLink signer
+        //
+        // Package name, newer version and SHA-256 have already been verified
+        // above. Android's package installer remains the final authority and
+        // still rejects an APK that does not carry the valid old->v2 lineage.
+        if (approvedLegacyArchiveOldestSigner(installed, archiveCerts,
+                installedCerts, installedLegacy, archiveLegacy)) {
+            QuietLog.log("UPDATE", "signer_post_rotation",
+                    "approved=1 compatibility=legacy_archive_oldest");
+            return;
+        }
+
         if (approvedSignerRotation(installed, archive,
                 installedCerts, archiveCerts,
                 installedLegacy, archiveLegacy)) {
@@ -401,6 +421,34 @@ final class UpdateManager {
         if (info.signingInfo.hasMultipleSigners()) return false;
         Set<String> current = currentSignerDigests(info);
         return current.size() == 1 && current.contains(pinnedDigest);
+    }
+
+    private static boolean approvedLegacyArchiveOldestSigner(
+            PackageInfo installed,
+            Set<String> archiveCerts,
+            Set<String> installedCerts,
+            boolean installedLegacy,
+            boolean archiveLegacy) throws Exception {
+        if (installedLegacy || !archiveLegacy) return false;
+        if (installed == null || installed.signingInfo == null) return false;
+        if (installed.signingInfo.hasMultipleSigners()) return false;
+
+        Set<String> installedCurrent = currentSignerDigests(installed);
+        boolean installedIsPinnedV2 = installedCurrent.size() == 1
+                && installedCurrent.contains(NEXT_SIGNER_SHA256);
+        boolean installedHistoryHasBoth = installedCerts.contains(OLD_SIGNER_SHA256)
+                && installedCerts.contains(NEXT_SIGNER_SHA256);
+        boolean archiveReportsPinnedOldest = archiveCerts.size() == 1
+                && archiveCerts.contains(OLD_SIGNER_SHA256);
+
+        QuietLog.log("UPDATE", "signer_legacy_archive",
+                "installed_current_v2=" + (installedIsPinnedV2 ? 1 : 0)
+                        + " installed_history_both=" + (installedHistoryHasBoth ? 1 : 0)
+                        + " archive_oldest_pinned=" + (archiveReportsPinnedOldest ? 1 : 0));
+
+        return installedIsPinnedV2
+                && installedHistoryHasBoth
+                && archiveReportsPinnedOldest;
     }
 
     private static boolean approvedSignerRotation(PackageInfo installed,

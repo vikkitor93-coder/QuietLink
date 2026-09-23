@@ -4,8 +4,8 @@ Updated: **2026-09-23**
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.51 / versionCode 63**  
-Latest release CI: **passed**
+Current release: **v0.3.52 / versionCode 64**  
+Latest release CI: **pending v0.3.52 validation**
 
 ---
 
@@ -162,6 +162,31 @@ Internet-path recovery still needs to become transport-independent.
 ---
 
 # 6. Online P2P work completed
+
+
+## v0.3.52 — Older-Android archive signer compatibility
+
+Observed from the user's privacy-safe log:
+- Installed package used modern signing info: `installed_legacy=0`.
+- Downloaded APK archive fell back to legacy parsing: `archive_legacy=1`.
+- Installed current v2 signer was recognized and installed history count was 2, but archive current v2 could not be observed because the legacy API exposed one certificate.
+- Android's official PackageInfo documentation states deprecated `signatures` returns the **oldest reported signing certificate** after certificate rotation for backwards compatibility.
+
+Fix:
+- Add one narrow post-rotation compatibility state:
+  - installed package must expose modern SigningInfo,
+  - installed current signer must be exactly pinned QuietLink v2,
+  - installed history must contain both pinned old and v2 certs,
+  - archive must be legacy-parsed and expose exactly the pinned original signer.
+- Package name, newer version and manifest SHA-256 are verified before this policy.
+- Android installer remains final signer-lineage enforcement; an APK lacking the valid old->v2 proof cannot update the already-v2 installed package.
+- No arbitrary legacy signer is accepted.
+- v0.3.51 rotation-lab behavior is unchanged.
+
+Deployment note:
+- The older phone's currently-installed updater still contains the old rejection logic, so v0.3.52 requires one more manual in-place install on that phone. Do not uninstall.
+- Once v0.3.52 is installed, the next release should be testable through CHECK UPDATE.
+
 
 
 ## v0.3.51 — Developer video rotation lab
@@ -589,26 +614,22 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: validate v0.3.51 video rotation lab, then promote the proven orientation behavior
+## Primary next checkpoint: manually install v0.3.52 on the older phone, verify updater continuity, then continue the video rotation matrix
 
-The older-phone updater issue is resolved enough to continue. Do not redesign the video stack yet.
-
-Immediate human test after v0.3.51 CI passes:
-1. Install v0.3.51 on both phones without uninstalling.
-2. Put both phones on the same LAN for the first orientation test.
-3. Start Video mode and open 🛠 -> **Video rotation lab** during the call.
-4. Try the four presets in order and note which keeps the **remote video** upright in portrait, landscape-left, and landscape-right.
-5. Repeat front and back camera.
-6. Separately identify whether the **local self-preview** is correct; if not, test the local preview transform/mirror controls without changing the sender formula.
-7. Test per-frame H.264 TX+RX together while physically rotating during a live stream.
-8. Test Force JPEG once. If JPEG is always correct but H.264 is not, focus the production fix on Surface/TextureView/H.264 metadata; if both fail the same way, focus sender orientation math.
-9. Return **Reset production defaults** before ending the comparison unless intentionally preserving a working candidate.
-10. Send back the working settings (or the privacy-safe diagnostic log plus a short description).
-
-After a combination is proven:
-- Replace the production H.264 orientation behavior with the smallest proven subset rather than leaving a broad matrix enabled by default.
-- Keep the developer lab available until both phones pass the full orientation matrix.
-- Then resume the queued permanent-Pi v0.3.51 server update and Wi-Fi ↔ mobile-data **Connected • Voice • Online** test from the previous checkpoint.
+Immediate human step after v0.3.52 CI passes:
+1. Manually install the signed v0.3.52 APK on the older phone **without uninstalling**.
+2. Install/update v0.3.52 on the newer phone.
+3. Confirm both retain their existing QuietLink state and show v0.3.52.
+4. The next release after v0.3.52 must be tested through **CHECK UPDATE** on the older phone to verify the documented legacy-archive compatibility path finally removes the manual-APK requirement.
+5. Then resume the v0.3.51 rotation-lab matrix on same-LAN Video mode:
+   - Production baseline
+   - Android official + TextureView display-only
+   - WebRTC + per-frame metadata
+   - Android + per-frame metadata
+   - front/back, portrait, landscape-left, landscape-right
+   - Force JPEG comparison once
+6. After a proven orientation combination is found, promote only the smallest proven subset to production.
+7. Then resume the queued permanent-Pi and Wi-Fi ↔ mobile-data internet Voice checkpoint.
 
 ---
 
