@@ -1,4 +1,4 @@
-# QuietLink 0.3.51
+# QuietLink 0.3.52
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,15 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.52 older-Android archive signer compatibility
+- Fixes the remaining updater false-positive on the older phone: installed QuietLink exposes modern signing history correctly, but the downloaded rotated APK is parsed through the deprecated legacy `PackageInfo.signatures` path.
+- Android documents that this legacy field returns the **oldest** signing certificate after certificate rotation for backward compatibility.
+- QuietLink therefore accepts only this exact compatibility state: installed current signer is the pinned v2 signer, installed signing history contains both pinned old+v2 certificates, and the archive's single legacy signer is the pinned original signer.
+- Package name, newer version, HTTPS host, and update SHA-256 are still verified first.
+- Android's package installer remains the final signing-lineage authority and must still accept the authenticated old→v2 lineage before installation.
+- Unknown signers, missing expected history, multiple current signers, or any other mismatch still fail closed.
+- v0.3.51's developer video rotation lab is unchanged.
 
 ## 0.3.51 developer video rotation lab
 - Adds **Video rotation lab** to the hidden 🛠 developer menu, including during an active real session.
