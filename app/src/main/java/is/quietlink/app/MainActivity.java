@@ -997,7 +997,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
         if (canonicalActive) {
             TextView canonicalNote = text(
-                    "Normalized mode is using one clockwise rotation convention. "
+                    "Normalized mode is using Android sensor-relative rotation metadata. "
                             + "Saved manual offsets stay stored but are bypassed.",
                     8, muted(), false);
             box.addView(canonicalNote, lp(-1,-2,0,0,0,4));
@@ -1466,7 +1466,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                                     "Android relative • front sensor−display / back sensor+display",
                                     "WebRTC/JPEG style • front sensor+display / back sensor−display",
                                     "Sensor only • ignore device rotation",
-                                    "Canonical clockwise • normalized raw H.264 experiment"
+                                    "Canonical relative • normalized Camera2 H.264 experiment"
                             },
                             RotationLabConfig.txFormula(this),
                             index -> RotationLabConfig.setTxFormula(this, index));
@@ -4324,7 +4324,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 sourceQuarterTurn = r == 90 || r == 270;
             } else {
                 // Decoder TextureView has no Camera2 sensor transform. The
-                // canonical wire value is explicitly clockwise display rotation.
+                // canonical wire value preserves Android Camera2 sensor-relative rotation.
                 drawRotation = r;
                 drawMirror = false;
                 sourceQuarterTurn = r == 90 || r == 270;

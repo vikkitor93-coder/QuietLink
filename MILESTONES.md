@@ -1,7 +1,7 @@
 # QuietLink milestones
 
-Updated: 2026-09-23  
-Current release: **v0.3.62**  
+Updated: 2026-09-24  
+Current release: **v0.3.63**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -77,7 +77,12 @@ Source of truth: **GitHub main**
    - ✅ v0.3.62 Camera2 rotate-and-crop AUTO opt-out where supported
    - ✅ v0.3.62 automatic canonical aspect + per-frame orientation metadata
    - ✅ Legacy saved profiles retained behind immediate developer override
-   - ⏳ Human: fresh fourth-phone test with zero manual orientation tuning
+   - ✅ Fresh fourth-phone v0.3.62 evidence captured: canonical mode active, but front sensor=270/display=0 was sent as 90° and the picture was still oriented incorrectly
+   - ✅ v0.3.63 ROT_REL2 capability bump preserves Android Camera2 sensor-relative quarter-turn semantics
+   - ✅ v0.3.63 active same-WiFi CODE room probe/reply + NSD conflict-suffix matching
+   - ✅ v0.3.63 privacy-safe LAN vs Wi-Fi Direct route diagnostics
+   - ⏳ Human: fresh fourth-phone v0.3.63 zero-tuning front/back/fullscreen validation
+   - ⏳ Human: same-router CODE must connect through LAN before the 8-second Wi-Fi Direct fallback
    - ⏳ Human: verify portrait stays fixed and delayed-enable Wi-Fi Direct reaches group/discovery
    - ⏳ Human: export working phone profiles and send them back for underlying rotation analysis
    - ⏳ Human: re-test log transfer on both phones and no-router Wi-Fi Direct CODE
@@ -154,6 +159,8 @@ Source of truth: **GitHub main**
    - ⏳ Group recovery and disconnect handling
 
 ## Current truth
+
+v0.3.63 is the active validation release. The v0.3.62 fresh fourth-phone test proved the first canonical front-camera conversion was still reversed for the real decoded TextureView, and the same test exposed a CODE regression where infrastructure Wi-Fi was not winning before Wi-Fi Direct. v0.3.63 changes the capability contract rather than silently reinterpreting ROT_CW1, and adds active same-WiFi room probing plus NSD conflict-safe matching.
 
 v0.3.48 production rendezvous matching is user-validated. v0.3.49 added the first encrypted internet session path and v0.3.50 fixed the older-phone updater signer false-positive. v0.3.51 adds a developer-only video rotation lab so the remaining cross-device orientation issue can be measured before selecting a new production formula. The permanent-Pi/internet Voice test remains queued immediately after the orientation checkpoint.
 

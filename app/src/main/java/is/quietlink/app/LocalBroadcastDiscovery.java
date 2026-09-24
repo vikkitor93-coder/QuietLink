@@ -42,6 +42,8 @@ public final class LocalBroadcastDiscovery implements AutoCloseable {
     private volatile String advertiseFingerprint;
     private volatile String advertiseName;
     private volatile int advertisePort;
+    private volatile String probeKind;
+    private volatile String probeToken;
     private DatagramSocket receiveSocket;
     private Thread receiverThread;
     private Thread senderThread;
@@ -63,6 +65,16 @@ public final class LocalBroadcastDiscovery implements AutoCloseable {
     }
 
     public synchronized void discover() {
+        if (!closed.get()) ensureStarted();
+    }
+
+    /**
+     * Actively probe for the opaque room token instead of relying only on
+     * unsolicited broadcasts. No raw pairing code is sent or logged.
+     */
+    public synchronized void discover(String kind, String token) {
+        probeKind = safe(kind);
+        probeToken = safe(token);
         if (!closed.get()) ensureStarted();
     }
 
@@ -108,7 +120,7 @@ public final class LocalBroadcastDiscovery implements AutoCloseable {
     }
 
     private void parse(DatagramPacket packet) {
-        if (listener == null || packet == null || packet.getAddress() == null) return;
+        if (packet == null || packet.getAddress() == null) return;
         try {
             String text = new String(packet.getData(), packet.getOffset(),
                     packet.getLength(), StandardCharsets.UTF_8);
@@ -120,7 +132,9 @@ public final class LocalBroadcastDiscovery implements AutoCloseable {
                     ? rawKind.substring(0, rawKind.length() - "_reply".length())
                     : rawKind;
             int port = Integer.parseInt(p[3]);
-            if (port <= 0 || port > 65535) return;
+            boolean isProbe = kind.endsWith("_query");
+            if ((!isProbe && (port <= 0 || port > 65535))
+                    || (isProbe && (port < 0 || port > 65535))) return;
             String fingerprint = p[4];
             if (!ownFingerprint.isEmpty() && ownFingerprint.equals(fingerprint)) return;
 
@@ -128,11 +142,20 @@ public final class LocalBroadcastDiscovery implements AutoCloseable {
                     p[5], Base64.NO_WRAP | Base64.URL_SAFE), StandardCharsets.UTF_8);
             String sourceHost = packet.getAddress().getHostAddress();
             String host = isUsableIpv4(p[6]) ? p[6] : sourceHost;
-            QuietLog.log("DISCOVERY", "udp_beacon_rx",
-                    "kind=" + kind + " reply=" + (isReply ? 1 : 0));
-            listener.onBeacon(kind, p[2], fingerprint, name, host, port);
+            QuietLog.log("DISCOVERY", isProbe ? "udp_probe_rx" : "udp_beacon_rx",
+                    "kind=" + (isProbe ? kind.substring(0, kind.length() - 6) : kind)
+                            + " reply=" + (isReply ? 1 : 0));
+            if (listener != null) {
+                listener.onBeacon(kind, p[2], fingerprint, name, host, port);
+            }
             if (!isReply && advertiseKind != null && advertisePort > 0) {
-                sendUnicastReply(packet.getAddress());
+                boolean directMatch = advertiseKind.equals(kind)
+                        && advertiseToken != null && advertiseToken.equals(p[2]);
+                boolean queryMatch = (advertiseKind + "_query").equals(kind)
+                        && advertiseToken != null && advertiseToken.equals(p[2]);
+                if (directMatch || queryMatch) {
+                    sendUnicastReply(packet.getAddress());
+                }
             }
         } catch (Exception ignored) {}
     }
@@ -169,6 +192,7 @@ public final class LocalBroadcastDiscovery implements AutoCloseable {
         while (!closed.get()) {
             try {
                 sendBeacon();
+                sendProbe();
                 Thread.sleep(SEND_INTERVAL_MS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -180,6 +204,39 @@ public final class LocalBroadcastDiscovery implements AutoCloseable {
                     return;
                 }
             }
+        }
+    }
+
+    private void sendProbe() {
+        String kind = probeKind;
+        String token = probeToken;
+        if (kind == null || kind.isEmpty() || token == null || token.isEmpty()) return;
+
+        boolean sent = false;
+        for (LocalEndpoint endpoint : localEndpoints()) {
+            DatagramSocket out = null;
+            try {
+                String msg = MAGIC + "|" + kind + "|" + token + "|0|||" + endpoint.address;
+                byte[] data = msg.getBytes(StandardCharsets.UTF_8);
+                out = new DatagramSocket(null);
+                out.setReuseAddress(true);
+                out.setBroadcast(true);
+                out.bind(new InetSocketAddress(endpoint.localAddress, 0));
+                for (InetAddress target : endpoint.broadcasts) {
+                    try {
+                        out.send(new DatagramPacket(data, data.length, target, DISCOVERY_PORT));
+                        sent = true;
+                    } catch (Exception ignored) {}
+                }
+            } catch (Exception ignored) {
+            } finally {
+                if (out != null) try { out.close(); } catch (Exception ignored) {}
+            }
+        }
+        if (sent) {
+            QuietLog.log("DISCOVERY", "udp_probe_tx",
+                    "kind=" + (kind.endsWith("_query")
+                            ? kind.substring(0, kind.length() - 6) : kind));
         }
     }
 

@@ -892,9 +892,9 @@ public final class VideoEngine implements AutoCloseable {
         int result;
         String formula;
         if (canonicalRotationActive()) {
-            result = RotationLabConfig.computeCanonicalClockwiseRotation(
+            result = RotationLabConfig.computeCanonicalRelativeRotation(
                     s, front, display);
-            formula = "Canonical clockwise";
+            formula = "Canonical relative";
         } else {
             result = RotationLabConfig.computeTransmitRotation(
                     context,

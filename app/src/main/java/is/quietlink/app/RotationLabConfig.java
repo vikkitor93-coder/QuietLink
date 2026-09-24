@@ -17,8 +17,10 @@ final class RotationLabConfig {
     static final int TX_ANDROID_RELATIVE = 1;
     static final int TX_WEBRTC_STYLE = 2;
     static final int TX_SENSOR_ONLY = 3;
-    // v0.3.62 wire semantics: number means the clockwise rotation that a
-    // generic display surface should apply to raw sensor-oriented pixels.
+    // v0.3.63 normalized wire semantics: preserve Android Camera2's documented
+    // sensor-relative quarter-turn value directly. The first ROT_CW1 live test
+    // showed that converting front-camera values to an assumed generic
+    // clockwise angle produced the wrong decoded quarter-turn on a fresh phone.
     static final int TX_CANONICAL_CLOCKWISE = 4;
 
     static final int SOURCE_DISPLAY = 0;
@@ -518,7 +520,7 @@ final class RotationLabConfig {
             case TX_SENSOR_ONLY:
                 return sensor;
             case TX_CANONICAL_CLOCKWISE:
-                return computeCanonicalClockwiseRotation(
+                return computeCanonicalRelativeRotation(
                         sensor, frontFacing, device);
             case TX_CURRENT:
             default:
@@ -527,25 +529,23 @@ final class RotationLabConfig {
     }
 
     /**
-     * Returns one unambiguous wire/display semantic: clockwise rotation to
-     * apply to raw sensor-oriented pixels.
+     * Returns Android Camera2's documented sensor-relative quarter-turn value.
      *
-     * Android's documented Camera2 relative-rotation formula uses opposite
-     * visual directions for front/back camera sensor orientation. QuietLink's
-     * old protocol forwarded that number and then treated it as one generic
-     * TextureView angle. This converts the result to a single clockwise display
-     * correction before it is sent to the peer.
+     * v0.3.62 ROT_CW1 attempted to convert the front-camera value into an
+     * abstract clockwise display angle. The fresh-device test proved that
+     * conversion was the wrong contract for QuietLink's decoded TextureView:
+     * sensor=270/display=0 was transmitted as 90 and rendered with the wrong
+     * quarter-turn. ROT_REL2 therefore keeps the Camera2 relative-rotation
+     * value itself. A new capability token prevents mixed v0.3.62/v0.3.63
+     * peers from interpreting the same number with different semantics.
      */
-    static int computeCanonicalClockwiseRotation(int sensorDegrees,
-                                                 boolean frontFacing,
-                                                 int deviceDegrees) {
+    static int computeCanonicalRelativeRotation(int sensorDegrees,
+                                                boolean frontFacing,
+                                                int deviceDegrees) {
         int sensor = normalize(sensorDegrees);
         int device = normalize(deviceDegrees);
         int sign = frontFacing ? 1 : -1;
-        int androidRelative = normalize(sensor - device * sign);
-        return frontFacing
-                ? normalize(360 - androidRelative)
-                : androidRelative;
+        return normalize(sensor - device * sign);
     }
 
     static int resolveLocalPreviewRotation(Context context, int streamRotation) {
@@ -617,7 +617,7 @@ final class RotationLabConfig {
             case TX_ANDROID_RELATIVE: return "Android relative";
             case TX_WEBRTC_STYLE: return "WebRTC/JPEG";
             case TX_SENSOR_ONLY: return "Sensor only";
-            case TX_CANONICAL_CLOCKWISE: return "Canonical clockwise";
+            case TX_CANONICAL_CLOCKWISE: return "Canonical relative";
             default: return "Current QL";
         }
     }

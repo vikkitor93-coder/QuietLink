@@ -1,10 +1,10 @@
 # QuietLink AI handoff / continuity guide
 
-Updated: **2026-09-23**  
+Updated: **2026-09-24**  
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.62 / versionCode 74**  
+Current release: **v0.3.63 / versionCode 75**  
 Latest release CI: **passed**
 
 ---
@@ -163,6 +163,26 @@ Internet-path recovery still needs to become transport-independent.
 
 # 6. Online P2P work completed
 
+
+## v0.3.63 — Fourth-phone orientation correction + infrastructure-LAN CODE repair
+
+Fresh fourth-phone v0.3.62 evidence:
+- canonical H.264 was genuinely active with no saved profile
+- display=0, front sensor=270, canonical result=90
+- rotate-and-crop NONE was requested and capture result reported actual=0
+- local Camera2 preview correctly stayed at app-level rotation 0
+- the user still observed the video oriented incorrectly
+- the same test session reported local_network=1 but only established after Wi-Fi Direct became active
+
+Interpretation and v0.3.63 fix:
+- ROT_CW1's front-camera inversion was the remaining bad assumption. It converted Android's Camera2 relative value 270 into a generic 90-degree clockwise value before the decoded TextureView.
+- v0.3.63 uses a new capability token, ROT_REL2, and preserves the Camera2 sensor-relative quarter-turn directly. Typical portrait front sensor=270/display=0 now reports 270; rear sensor=90/display=0 remains 90.
+- The capability token was bumped rather than silently changing ROT_CW1 semantics. Mixed v0.3.62/v0.3.63 peers therefore do not enter normalized mode together and retain the legacy profile fallback.
+- Same-WiFi CODE discovery now actively probes for the opaque derived room id and a matching host immediately unicasts its existing room advertisement back.
+- Android NSD also stores the opaque room id as TXT data and tolerates Android's conflict suffix form such as "name (2)".
+- Join-side route diagnostics identify only lan / wifi_direct and generic failure class; no IP, MAC, room token/code or identity is logged.
+- Wi-Fi Direct is still retained unchanged as the 8-second fallback if infrastructure-LAN discovery cannot connect.
+- Portrait activity lock remains until the new front/back/fullscreen test passes.
 
 ## v0.3.62 — Canonical H.264 orientation normalization
 
@@ -911,19 +931,18 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: fresh fourth-phone canonical-orientation test
+## Primary next checkpoint: v0.3.63 fourth-phone orientation + same-WiFi route validation
 
-After v0.3.62 CI passes:
-1. Update at least two existing phones to v0.3.62 and install v0.3.62 on a fourth phone with no saved calibration profile.
-2. On the fourth phone, do **not** touch Video Tune. Connect to another v0.3.62 phone and open Video in portrait.
-3. Expected: AUTO ORIENTATION shows ACTIVE; incoming main video is upright; local mini preview is upright and proportionally portrait without manual 9:16 or rotation offsets.
-4. Switch front/back cameras and enter/exit fullscreen. No manual offset should become necessary.
-5. Export LOG + PROFILES from the fourth phone. Look for `formula=Canonical clockwise canonical=1`, `Canonical H.264 rotation active: YES`, and API31+ rotate/crop request/result events.
-6. If normalized mode is wrong, use Video Tune -> **LEGACY PROFILE • FORCED**. This should immediately restore saved/manual legacy controls without deleting them. Export the log from the bad canonical state before further tuning.
-7. Keep the portrait-only activity lock until this succeeds on the existing three devices plus the fresh fourth device.
-8. Continue Wi-Fi Direct delayed-enable validation after the video checkpoint.
-
----
+1. Update the fresh fourth phone and at least one existing peer to v0.3.63.
+2. On the fourth phone, do not load/save/tune a legacy profile. Connect two v0.3.63 phones and open Video in portrait.
+3. Front camera expectation: AUTO ORIENTATION is active; diagnostics show `formula=Canonical relative canonical=1 result=270` for the common sensor=270/display=0 case; incoming main video and local mini preview are upright and proportionally portrait.
+4. Switch to the rear camera. Common sensor=90/display=0 should remain result=90 and upright remotely.
+5. Enter/exit fullscreen several times. No manual Window 1/2 offset or 9:16 override should become necessary.
+6. Before any tuning, export LOG + PROFILES if either front or rear remains wrong. LEGACY PROFILE • FORCED remains the immediate fallback without deleting old profiles.
+7. Separately put both phones on the same ordinary Wi-Fi router and HOST/JOIN through CODE. Expected: LAN wins before the 8-second Wi-Fi Direct fallback. The join log should show `lan_candidate` and `code_connect_success path=lan`; Wi-Fi Direct should not need to start.
+8. If same-WiFi still fails, export both logs without changing network settings. New `udp_probe_*`, `lan_nsd_*`, `lan_candidate`, and `code_connect_*` events should isolate discovery vs socket failure without exposing addresses.
+9. Keep portrait-only activity lock until the fourth-phone normalized test passes.
+10. After both checkpoints pass, return immediately to milestone 7: deploy/verify the current permanent-Pi relay API and validate encrypted cross-network Voice + bidirectional audio.
 
 # 11. Release/build rules
 

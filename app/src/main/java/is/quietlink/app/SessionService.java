@@ -1035,7 +1035,7 @@ public final class SessionService extends Service {
             SessionBus.status("Searching the same Wi-Fi first…");
             udpSocket = new DatagramSocket(0);
             lan = new LanDiscovery(this);
-            lan.discover(code, this::connectOnce);
+            lan.discover(code, (address, port) -> connectOnce(address, port, "lan"));
             main.postDelayed(() -> {
                 if (!established.get() && !connecting.get() && !stopped.get()) {
                     startOnlineRendezvousBootstrap();
@@ -1067,11 +1067,18 @@ public final class SessionService extends Service {
             main.postDelayed(() -> connectWifiDirectEndpoint(address, port), 650L);
             return;
         }
-        connectOnce(address, port);
+        connectOnce(address, port, "wifi_direct");
     }
 
     private void connectOnce(String address, int port) {
+        connectOnce(address, port, "local");
+    }
+
+    private void connectOnce(String address, int port, String path) {
         if (!connecting.compareAndSet(false, true) || stopped.get() || established.get()) return;
+        final String safePath = "wifi_direct".equals(path) ? "wifi_direct"
+                : ("lan".equals(path) ? "lan" : "local");
+        QuietLog.log("DISCOVERY", "code_connect_attempt", "path=" + safePath);
         io.execute(() -> {
             Socket s = null;
             try {
@@ -1079,9 +1086,12 @@ public final class SessionService extends Service {
                 s = new Socket();
                 s.connect(new InetSocketAddress(address, port), 5000);
                 establishCodeSession(s);
+                QuietLog.log("DISCOVERY", "code_connect_success", "path=" + safePath);
             } catch (Exception e) {
                 if (s != null) try { s.close(); } catch (Exception ignored) {}
                 connecting.set(false);
+                QuietLog.log("DISCOVERY", "code_connect_failed",
+                        "path=" + safePath + " reason=" + e.getClass().getSimpleName());
                 if (wifiDirect != null) wifiDirect.resetJoinAttempt();
                 if (!stopped.get() && !established.get()) SessionBus.status("Connection failed • continuing search…");
             }
@@ -1334,10 +1344,10 @@ public final class SessionService extends Service {
         boolean canonical = !RotationLabConfig.forceLegacyPipeline(this);
         if (h264) {
             return canonical
-                    ? "H264_720P30,JPEG,ROT_CW1"
+                    ? "H264_720P30,JPEG,ROT_REL2"
                     : "H264_720P30,JPEG";
         }
-        return canonical ? "JPEG,ROT_CW1" : "JPEG";
+        return canonical ? "JPEG,ROT_REL2" : "JPEG";
     }
 
     private boolean canTransmitAudio() {
@@ -1407,7 +1417,7 @@ public final class SessionService extends Service {
                     }
                 } else if (c.startsWith("VIDEO_CAPS:")) {
                     String caps = c.substring("VIDEO_CAPS:".length());
-                    peerCanonicalRotation = caps.contains("ROT_CW1");
+                    peerCanonicalRotation = caps.contains("ROT_REL2");
                     peerH264Capable = caps.contains("H264_720P30")
                             && h264Capability != null
                             && h264Capability.usable()

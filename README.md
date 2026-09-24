@@ -1,4 +1,4 @@
-# QuietLink 0.3.62
+# QuietLink 0.3.63
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,16 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.63 fourth-phone orientation + same-WiFi CODE repair
+- The fresh fourth-phone v0.3.62 test reached canonical H.264 mode correctly, requested rotate-and-crop NONE, and reported front sensor=270/display=0, but ROT_CW1 converted that to 90° and the live picture was still oriented incorrectly.
+- v0.3.63 replaces that experimental wire contract with **ROT_REL2**. Two v0.3.63 peers keep Android Camera2's documented sensor-relative quarter-turn directly: a common front sensor=270/display=0 is sent as 270°, while a common rear sensor=90/display=0 remains 90°.
+- The capability token changed intentionally. A v0.3.63 peer does not activate normalized mode with a v0.3.62 peer, so the two versions cannot interpret the same rotation number differently; mixed versions retain the existing legacy-profile fallback.
+- Same-router CODE also gets a second local discovery route: joiners actively broadcast an opaque derived-room query and hosts answer it immediately by unicast. The raw six-digit code is never sent or logged.
+- Android NSD advertising now carries the opaque room id as TXT metadata and accepts Android's conflict suffix form such as `name (2)` instead of rejecting a renamed but otherwise matching service.
+- New privacy-safe diagnostics identify only the selected local route (`lan` / `wifi_direct`), candidate source, and generic failure class. They never log peer addresses, room tokens, codes or identities.
+- Wi-Fi Direct remains the fallback after 8 seconds if infrastructure-LAN discovery genuinely cannot connect. QL5 authentication/encryption remains mandatory on every route.
+- Portrait lock remains until the new fourth-phone front/back/fullscreen check passes.
 
 ## 0.3.62 canonical H.264 video orientation
 - Three different phones were manually calibrated and all could be made correct, but they required different combinations of sender rotation, receiver offsets, local preview modes, frame metadata, and mirror settings. That ruled out one safe universal legacy offset.

@@ -372,3 +372,15 @@
 316. Calibration export: exported profile/log text must state `Canonical H.264 rotation active: YES/NO` so fourth-phone results can be diagnosed without screenshots.
 317. Privacy: canonical capability/orientation logs may contain sensor/display angles, camera facing category, rotate/crop mode, and capability booleans only; never camera content, network identifiers, pairing code, keys or peer identity.
 
+
+
+318. v0.3.63 updater continuity: update v0.3.62 phones in place through CHECK UPDATE where possible; package id, data, known devices and saved legacy video profiles must remain intact.
+319. ROT_REL2 negotiation: connect two v0.3.63 phones with H.264. Diagnostics must show canonical capability active only for the new ROT_REL2 contract. A v0.3.63 ↔ v0.3.62 pair must stay on legacy behavior rather than activating mismatched canonical semantics.
+320. Fresh fourth-phone front camera: with no saved profile and no Video Tune changes, front sensor=270/display=0 should log formula=Canonical relative and result=270; incoming main video and local mini preview must be upright and naturally proportioned.
+321. Fresh fourth-phone rear camera: switch to rear camera. A common rear sensor=90/display=0 should log result=90 and remain upright remotely without manual offsets.
+322. Canonical fullscreen continuity: enter/leave fullscreen repeatedly on the fourth phone. Front/rear orientation and Auto aspect must remain correct; API31+ rotate/crop NONE request/result must not regress.
+323. Same-router CODE route: put both phones on the same ordinary Wi-Fi router, HOST/JOIN the same code, and confirm the encrypted session establishes through LAN before the 8-second Wi-Fi Direct fallback. The join-side privacy-safe log should show lan_candidate then code_connect_success path=lan.
+324. Active room probe: on same Wi-Fi, confirm the joiner can emit udp_probe_tx kind=room and the host can receive the query/reply without exposing the opaque room token or six-digit code in logs.
+325. NSD conflict suffix: if Android renames the advertised service to an expected conflict form such as "(2)", the matching room must still resolve/connect rather than being rejected by strict service-name equality.
+326. Wi-Fi Direct fallback regression: make infrastructure LAN unavailable while keeping Wi-Fi/P2P usable; CODE must still fall back to Wi-Fi Direct and establish QL5 normally after the local-first head start.
+327. LAN-route privacy: new lan_candidate/code_connect diagnostics may contain only source/path/generic failure class. They must never contain IP/MAC, peer name, room id/token, six-digit code, key/fingerprint or media/chat content.
