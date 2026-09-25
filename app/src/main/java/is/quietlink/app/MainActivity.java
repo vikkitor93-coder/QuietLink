@@ -1990,7 +1990,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                                     Toast.LENGTH_SHORT).show();
                             return;
                         }
-                        String payload = latest[0].render(BuildConfig.VERSION_NAME);
+                        String payload = latest[0].render(quickAppVersionName());
                         android.content.ClipboardManager clipboard =
                                 (android.content.ClipboardManager)
                                         getSystemService(CLIPBOARD_SERVICE);
@@ -2026,7 +2026,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             DevQuickTest.Metrics after = captureQuickAppTestMetrics();
             DevQuickTest.Report report = DevQuickTest.evaluate(before, after);
             latest[0] = report;
-            reportText.setText(report.render(BuildConfig.VERSION_NAME));
+            reportText.setText(report.render(quickAppVersionName()));
             QuietLog.log("DEV", "quick_app_test",
                     "pass=" + report.passCount
                             + " warn=" + report.warnCount
@@ -2034,6 +2034,18 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                             + " skip=" + report.skipCount
                             + " mode=" + activeMode);
         }, DevQuickTest.SAMPLE_MS);
+    }
+
+    private String quickAppVersionName() {
+        try {
+            android.content.pm.PackageInfo info =
+                    getPackageManager().getPackageInfo(getPackageName(), 0);
+            if (info != null && info.versionName != null
+                    && !info.versionName.trim().isEmpty()) {
+                return info.versionName.trim();
+            }
+        } catch (Exception ignored) {}
+        return "unknown";
     }
 
     private DevQuickTest.Metrics captureQuickAppTestMetrics() {
