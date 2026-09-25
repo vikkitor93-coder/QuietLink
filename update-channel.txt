@@ -1,1 +1,4 @@
-channel=stable\nversionName=0.3.64\nversionCode=76\npublishFrom=main\n
+channel=stable
+versionName=0.3.64
+versionCode=76
+publishFrom=main
