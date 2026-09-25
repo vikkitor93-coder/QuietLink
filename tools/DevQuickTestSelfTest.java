@@ -43,8 +43,9 @@ public final class DevQuickTestSelfTest {
         }
 
         String rendered = good.render("test");
-        if (rendered.contains("peerName") || rendered.contains("room code")) {
-            throw new AssertionError("report unexpectedly contains identifying labels");
+        if (rendered.contains("192.168.")
+                || rendered.matches("(?s).*\\b\\d{6}\\b.*")) {
+            throw new AssertionError("report unexpectedly contains a network address or six-digit value");
         }
 
         System.out.println("DevQuickTestSelfTest PASS");
