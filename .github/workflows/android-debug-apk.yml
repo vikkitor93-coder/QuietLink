@@ -55,6 +55,14 @@ jobs:
             tools/CoreCryptoTest.java
           java -cp build/core-test is.quietlink.app.CoreCryptoTest
 
+      - name: Run Quick App Test evaluator self-test
+        run: |
+          mkdir -p build/dev-quick-test
+          javac -d build/dev-quick-test \
+            app/src/main/java/is/quietlink/app/DevQuickTest.java \
+            tools/DevQuickTestSelfTest.java
+          java -cp build/dev-quick-test is.quietlink.app.DevQuickTestSelfTest
+
       - name: Apply build version
         run: |
           source version.properties

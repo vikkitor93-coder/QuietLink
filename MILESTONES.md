@@ -1,7 +1,7 @@
 # QuietLink milestones
 
-Updated: 2026-09-24  
-Current release: **v0.3.63**  
+Updated: 2026-09-25  
+Current release: **v0.3.64**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -158,9 +158,31 @@ Source of truth: **GitHub main**
    - ⏳ Group UI / participant state
    - ⏳ Group recovery and disconnect handling
 
+
+## Parallel architecture-hardening track
+
+- 🟡 **Phase 0 — regression shield**
+  - ✅ Architecture roadmap added
+  - ✅ Pure-Java Quick App Test evaluator
+  - ✅ In-call Developer **QUICK APP TEST • 6-second scan**
+  - ✅ Privacy-safe copyable PASS/WARN/FAIL/N/A report
+  - ✅ CI self-test for the evaluator
+  - ⏳ Human: run Quick App Test during Voice/Video/Baby calls and return the copied report
+  - ⏳ Human: re-confirm v0.3.63 orientation + same-WiFi LAN fixes on v0.3.64
+- ⏳ **Phase 1 — shadow session state machine**
+  - Next only after Phase 0 baseline is clean
+- ⏳ **Phase 2 — isolated ConnectionRouter + LAN/Wi-Fi Direct/Internet connectors**
+- ⏳ **Phase 3 — transport-independent recovery**
+- ⏳ **Phase 4 — Audio/Video/Chat/Baby controller boundaries**
+- ⏳ **Phase 5 — frozen core interfaces / capability contracts**
+- ⏳ **Phase 6 — release-gate device matrix**
+- ⏳ **Phase 7 — remove legacy coupling**
+
+See `ARCHITECTURE_ROADMAP.md` for entry/exit criteria and the no-big-bang-rewrite rules.
+
 ## Current truth
 
-v0.3.63 is the active validation release. The v0.3.62 fresh fourth-phone test proved the first canonical front-camera conversion was still reversed for the real decoded TextureView, and the same test exposed a CODE regression where infrastructure Wi-Fi was not winning before Wi-Fi Direct. v0.3.63 changes the capability contract rather than silently reinterpreting ROT_CW1, and adds active same-WiFi room probing plus NSD conflict-safe matching.
+v0.3.64 is the active validation release. It preserves the v0.3.63 rotation/LAN repair and starts the architecture-hardening regression shield with a live Quick App Test and CI evaluator. The next architectural phase remains shadow-only until the current device behavior is proven clean.
 
 v0.3.48 production rendezvous matching is user-validated. v0.3.49 added the first encrypted internet session path and v0.3.50 fixed the older-phone updater signer false-positive. v0.3.51 adds a developer-only video rotation lab so the remaining cross-device orientation issue can be measured before selecting a new production formula. The permanent-Pi/internet Voice test remains queued immediately after the orientation checkpoint.
 

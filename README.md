@@ -1,4 +1,4 @@
-# QuietLink 0.3.63
+# QuietLink 0.3.64
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,26 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.64 architecture hardening Phase 0 + Quick App Test
+- New `ARCHITECTURE_ROADMAP.md` defines the incremental plan for isolating mature core systems instead of performing a risky rewrite.
+- The first phase is a **regression shield**: make existing behavior observable/testable before moving ownership between classes.
+- During a real call, unlocked Developer tools now show **QUICK APP TEST • 6-second scan**.
+- The scan is intentionally passive. It does not mute/unmute, switch cameras, send chat, disconnect, change Baby state, or alter network routing.
+- It samples two live diagnostic snapshots and checks:
+  - active/authenticated session + verification phrase,
+  - heartbeat/RTT/network/recovery stability,
+  - microphone permission and audio TX/RX flow,
+  - audio queues/jitter/concealment/playback drops,
+  - visual-mode codec/video TX/RX/render FPS,
+  - decoder/camera surface validity,
+  - canonical H.264 orientation state + quarter-turn metadata,
+  - video queue/drop/loss,
+  - Baby role/settings sync when applicable,
+  - diagnostic file-transfer state.
+- The result is a privacy-safe copyable report with PASS/WARN/FAIL/N/A rows and a short manual spot-check list. It never includes peer name, address, room code, identity/key or media/chat content.
+- The evaluator is pure Java and now runs in CI, so the same health rules used on-device have a regression self-test.
+- v0.3.63 ROT_REL2 and same-WiFi CODE fixes remain unchanged while this hardening track begins.
 
 ## 0.3.63 fourth-phone orientation + same-WiFi CODE repair
 - The fresh fourth-phone v0.3.62 test reached canonical H.264 mode correctly, requested rotate-and-crop NONE, and reported front sensor=270/display=0, but ROT_CW1 converted that to 90° and the live picture was still oriented incorrectly.

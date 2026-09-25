@@ -1,10 +1,10 @@
 # QuietLink AI handoff / continuity guide
 
-Updated: **2026-09-24**  
+Updated: **2026-09-25**  
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.63 / versionCode 75**  
+Current release: **v0.3.64 / versionCode 76**  
 Latest release CI: **passed**
 
 ---
@@ -163,6 +163,41 @@ Internet-path recovery still needs to become transport-independent.
 
 # 6. Online P2P work completed
 
+
+## v0.3.64 — Architecture hardening Phase 0 + in-call Quick App Test
+
+User request:
+- Mature core features have repeatedly regressed when unrelated work changed shared lifecycle/state.
+- Create a roadmap that separates stable core systems so new features cannot casually compromise them.
+- Add a fast Developer-mode test during a live call so the user can scan the app and paste a useful report back.
+
+Implemented:
+- Added `ARCHITECTURE_ROADMAP.md`.
+- This is explicitly incremental, not a big-bang rewrite.
+- Phase 0 is the regression shield: observe/test current behavior before changing ownership.
+- Added pure-Java `DevQuickTest` evaluator plus `tools/DevQuickTestSelfTest.java`.
+- GitHub Actions runs the evaluator self-test before the Android build.
+- During a real call, Developer tools now show **QUICK APP TEST • 6-second scan**.
+- The scan is passive: no mute/camera/chat/disconnect/Baby/network-setting changes.
+- It samples live diagnostics twice and checks session/authentication, heartbeat/RTT, recovery stability, audio/video flow/queues/loss, visual surfaces/orientation state, Baby synchronization and diagnostic-transfer state.
+- Result is a copyable privacy-safe PASS/WARN/FAIL/N/A report with manual spot-check reminders.
+- Report intentionally excludes peer name, address, room code/token, identity/key, chat text and media.
+- v0.3.63 ROT_REL2 and same-WiFi CODE changes were not redesigned by this release.
+
+Architecture direction now documented:
+1. Phase 0 — regression shield/baseline.
+2. Phase 1 — explicit session state machine in **shadow mode first**.
+3. Phase 2 — ConnectionRouter with isolated LAN/Wi-Fi Direct/Internet/Nearby connectors.
+4. Phase 3 — transport-independent recovery.
+5. Phase 4 — Audio/Video/Chat/Baby controller boundaries.
+6. Phase 5 — frozen core interfaces/capability contracts.
+7. Phase 6 — release-gate test matrix.
+8. Phase 7 — remove old shared coupling only after the new boundaries are proven.
+
+Non-negotiable migration rule:
+- New coordinator/state-machine code observes current behavior before becoming authoritative.
+- Do not simultaneously rewrite LAN, Wi-Fi Direct, crypto, recovery and media.
+- QL5, signer/package continuity, local-first behavior and privacy-safe logs remain preserved.
 
 ## v0.3.63 — Fourth-phone orientation correction + infrastructure-LAN CODE repair
 
@@ -931,18 +966,22 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: v0.3.63 fourth-phone orientation + same-WiFi route validation
+## Primary next checkpoint: v0.3.64 regression baseline, then Phase 1A shadow state
 
-1. Update the fresh fourth phone and at least one existing peer to v0.3.63.
-2. On the fourth phone, do not load/save/tune a legacy profile. Connect two v0.3.63 phones and open Video in portrait.
-3. Front camera expectation: AUTO ORIENTATION is active; diagnostics show `formula=Canonical relative canonical=1 result=270` for the common sensor=270/display=0 case; incoming main video and local mini preview are upright and proportionally portrait.
-4. Switch to the rear camera. Common sensor=90/display=0 should remain result=90 and upright remotely.
-5. Enter/exit fullscreen several times. No manual Window 1/2 offset or 9:16 override should become necessary.
-6. Before any tuning, export LOG + PROFILES if either front or rear remains wrong. LEGACY PROFILE • FORCED remains the immediate fallback without deleting old profiles.
-7. Separately put both phones on the same ordinary Wi-Fi router and HOST/JOIN through CODE. Expected: LAN wins before the 8-second Wi-Fi Direct fallback. The join log should show `lan_candidate` and `code_connect_success path=lan`; Wi-Fi Direct should not need to start.
-8. If same-WiFi still fails, export both logs without changing network settings. New `udp_probe_*`, `lan_nsd_*`, `lan_candidate`, and `code_connect_*` events should isolate discovery vs socket failure without exposing addresses.
-9. Keep portrait-only activity lock until the fourth-phone normalized test passes.
-10. After both checkpoints pass, return immediately to milestone 7: deploy/verify the current permanent-Pi relay API and validate encrypted cross-network Voice + bidirectional audio.
+1. Update the fresh fourth phone and at least one existing peer to v0.3.64.
+2. Start a normal real Voice or Video call, unlock Developer tools if needed, then run **QUICK APP TEST • 6-second scan** after the call has been stable for about 10 seconds.
+3. COPY REPORT and return the pasted report. The scan itself must not alter mic/camera/chat/Baby/network state.
+4. In the same release, re-run the v0.3.63 device checkpoints:
+   - fourth-phone front/rear/fullscreen orientation with zero manual tuning,
+   - same-router CODE where LAN must win before the 8-second Wi-Fi Direct fallback.
+5. If either checkpoint fails, export LOG + PROFILES before tuning/changing network settings and fix that regression before continuing architecture migration.
+6. Once the v0.3.64 baseline is clean, begin **Architecture Roadmap Phase 1A**:
+   - add explicit `SessionState` + immutable `SessionSnapshot`,
+   - derive them from the existing production booleans,
+   - run shadow-only mismatch diagnostics,
+   - do **not** make the new state machine authoritative yet.
+7. Keep the connection-router rewrite for Phase 2. LAN/Wi-Fi Direct/Internet connector ownership should not move until the shadow state model is proven by CI + real-device Quick App Test evidence.
+8. After the regression shield is stable, continue milestone 7 internet P2P work through the isolated architecture rather than adding more shared `SessionService` coupling.
 
 # 11. Release/build rules
 
@@ -992,6 +1031,8 @@ Start with these when resuming:
 - `app/src/main/java/is/quietlink/app/KnownDeviceStore.java`
 - `app/src/main/java/is/quietlink/app/DeviceIdentity.java`
 - `app/src/main/java/is/quietlink/app/MainActivity.java` — lobby/status UI and call UI
+- `app/src/main/java/is/quietlink/app/DevQuickTest.java` — pure-Java live-call regression evaluator
+- `ARCHITECTURE_ROADMAP.md` — staged core-isolation plan and release gates
 - `rendezvous/server.js` — standalone signaling server
 - `.github/workflows/android-debug-apk.yml` — build/update publication
 

@@ -384,3 +384,17 @@
 325. NSD conflict suffix: if Android renames the advertised service to an expected conflict form such as "(2)", the matching room must still resolve/connect rather than being rejected by strict service-name equality.
 326. Wi-Fi Direct fallback regression: make infrastructure LAN unavailable while keeping Wi-Fi/P2P usable; CODE must still fall back to Wi-Fi Direct and establish QL5 normally after the local-first head start.
 327. LAN-route privacy: new lan_candidate/code_connect diagnostics may contain only source/path/generic failure class. They must never contain IP/MAC, peer name, room id/token, six-digit code, key/fingerprint or media/chat content.
+
+
+328. v0.3.64 updater continuity: update from v0.3.63 in place; package data, known devices, saved calibration profiles and signing continuity must remain intact.
+329. Quick App Test access: during a real active call with developer mode unlocked, open 🛠 and confirm **QUICK APP TEST • 6-second scan** is the first live-session option.
+330. Passive-scan safety: start Quick App Test and confirm it does not change mic mute, camera state/facing, listening state, Baby role/settings, chat contents, fullscreen state, or connection route.
+331. Quick App Test healthy Voice: leave a stable Voice call running for at least 10 seconds, run the scan, and confirm session/heartbeat/audio-flow rows are populated and no video-only row is treated as a required failure.
+332. Quick App Test healthy Video: run during H.264 Video with both cameras expected. Confirm codec, TX/RX packet flow, rendered FPS, surfaces, normalized-orientation state, rotation metadata and queue/loss rows appear.
+333. Quick App Test Baby: run once from Parent and once from Baby Station. Confirm the report identifies the role and does not require Parent continuous microphone TX when PTT is idle.
+334. Quick App Test copy: tap COPY REPORT after completion and paste it into a text field. It must contain version, PASS/WARN/FAIL/N/A rows and manual spot checks, but no peer name, IP/MAC, room code/token, key/fingerprint, chat text or media content.
+335. Quick App Test fault visibility: during a deliberate network interruption/recovery, run the scan. Reconnecting/heartbeat/recovery rows must visibly WARN/FAIL rather than producing an all-pass result.
+336. Quick App Test repeat: tap RUN AGAIN without leaving the call and confirm a fresh 6-second sample is collected rather than reusing the previous counters.
+337. CI evaluator gate: GitHub Actions must compile/run `DevQuickTestSelfTest` before the Android build and fail the workflow if the evaluator's healthy/broken fixtures no longer behave as expected.
+338. v0.3.64 rotation regression: repeat tests 320-322; ROT_REL2 front/rear/fullscreen behavior must remain unchanged by the developer-test addition.
+339. v0.3.64 same-WiFi regression: repeat tests 323-327; LAN must still win before Wi-Fi Direct when both phones share a normal router.

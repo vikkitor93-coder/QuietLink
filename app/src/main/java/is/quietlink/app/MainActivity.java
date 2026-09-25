@@ -838,6 +838,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
         if (SessionBus.active && !devDummySession) {
             String[] options = {
+                    "QUICK APP TEST • 6-second scan",
                     "Live diagnostics",
                     "H.264 codec info",
                     "ROTATE ONLY • compact live panel",
@@ -850,13 +851,14 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             new android.app.AlertDialog.Builder(this)
                     .setTitle("🛠 Developer tools")
                     .setItems(options, (dialog, which) -> {
-                        if (which == 0) showReliabilityDiagnostics();
-                        else if (which == 1) showH264CodecInfo();
-                        else if (which == 2) showQuickRotationPanel();
-                        else if (which == 3) showVideoRotationLab();
-                        else if (which == 4) reportDiagnosticLogToGitHub();
-                        else if (which == 5) exportDiagnosticLog();
-                        else if (which == 6) exportVideoProfiles();
+                        if (which == 0) showQuickAppTest();
+                        else if (which == 1) showReliabilityDiagnostics();
+                        else if (which == 2) showH264CodecInfo();
+                        else if (which == 3) showQuickRotationPanel();
+                        else if (which == 4) showVideoRotationLab();
+                        else if (which == 5) reportDiagnosticLogToGitHub();
+                        else if (which == 6) exportDiagnosticLog();
+                        else if (which == 7) exportVideoProfiles();
                         else {
                             QuietLog.clear(this);
                             Toast.makeText(this, "Diagnostic log cleared", Toast.LENGTH_SHORT).show();
@@ -1947,6 +1949,158 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         } catch (Exception e) {
             Toast.makeText(this, "Could not export text file", Toast.LENGTH_LONG).show();
         }
+    }
+
+
+    private void showQuickAppTest() {
+        if (!devUnlocked) return;
+        if (!SessionBus.active || devDummySession) {
+            Toast.makeText(this,
+                    "Quick App Test needs a real active call",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        TextView reportText = text("", 12, Color.WHITE, false);
+        reportText.setPadding(dp(16),dp(12),dp(16),dp(12));
+        reportText.setTextIsSelectable(true);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(reportText, new ScrollView.LayoutParams(-1,-2));
+
+        final DevQuickTest.Report[] latest = new DevQuickTest.Report[1];
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("Quick App Test")
+                .setMessage("Safe passive scan. QuietLink will not mute, switch camera, send chat, disconnect, or change call settings.")
+                .setView(scroll)
+                .setPositiveButton("Run again", null)
+                .setNeutralButton("Copy report", null)
+                .setNegativeButton("Close", null)
+                .create();
+
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                    .setOnClickListener(v -> runQuickAppTestScan(reportText, latest));
+            dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL)
+                    .setOnClickListener(v -> {
+                        if (latest[0] == null) {
+                            Toast.makeText(this,
+                                    "Wait for the scan to finish",
+                                    Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        String payload = latest[0].render(BuildConfig.VERSION_NAME);
+                        android.content.ClipboardManager clipboard =
+                                (android.content.ClipboardManager)
+                                        getSystemService(CLIPBOARD_SERVICE);
+                        if (clipboard != null) {
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText(
+                                    "QuietLink Quick App Test", payload));
+                            Toast.makeText(this,
+                                    "Privacy-safe Quick App Test copied",
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                    });
+            runQuickAppTestScan(reportText, latest);
+        });
+        dialog.show();
+    }
+
+    private void runQuickAppTestScan(TextView reportText,
+                                     DevQuickTest.Report[] latest) {
+        if (reportText == null || latest == null) return;
+        if (!SessionBus.active || devDummySession) {
+            reportText.setText("No real active QuietLink call to scan.");
+            return;
+        }
+
+        final DevQuickTest.Metrics before = captureQuickAppTestMetrics();
+        latest[0] = null;
+        reportText.setText(
+                "Scanning the live call for 6 seconds…\n\n"
+                + "Keep the call running normally. No controls will be changed.");
+
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            if (!reportText.isAttachedToWindow()) return;
+            DevQuickTest.Metrics after = captureQuickAppTestMetrics();
+            DevQuickTest.Report report = DevQuickTest.evaluate(before, after);
+            latest[0] = report;
+            reportText.setText(report.render(BuildConfig.VERSION_NAME));
+            QuietLog.log("DEV", "quick_app_test",
+                    "pass=" + report.passCount
+                            + " warn=" + report.warnCount
+                            + " fail=" + report.failCount
+                            + " skip=" + report.skipCount
+                            + " mode=" + activeMode);
+        }, DevQuickTest.SAMPLE_MS);
+    }
+
+    private DevQuickTest.Metrics captureQuickAppTestMetrics() {
+        SessionBus.DiagnosticsSnapshot d = SessionBus.diagnosticsSnapshot();
+        SessionBus.FileTransferProgress transfer = SessionBus.fileTransferProgress();
+
+        boolean visual = activeMode == SessionService.MODE_VIDEO
+                || activeMode == SessionService.MODE_BABY;
+        boolean localExpected = visual && localVideoOn;
+        boolean remoteExpected = visual && remoteVideoOn;
+        boolean micTxExpected = activeMode == SessionService.MODE_BABY
+                ? (activeBabyStation && !micMuted)
+                : !micMuted;
+
+        boolean remoteSurfaceValid = false;
+        boolean localSurfaceValid = false;
+        try {
+            remoteSurfaceValid = SessionBus.remoteVideoSurface != null
+                    && SessionBus.remoteVideoSurface.isValid();
+        } catch (Exception ignored) {}
+        try {
+            localSurfaceValid = SessionBus.localVideoSurface != null
+                    && SessionBus.localVideoSurface.isValid();
+        } catch (Exception ignored) {}
+
+        return new DevQuickTest.Metrics(
+                SessionBus.active,
+                SessionBus.connected,
+                SessionBus.verification != null
+                        && !SessionBus.verification.trim().isEmpty(),
+                checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                        == PackageManager.PERMISSION_GRANTED,
+                checkSelfPermission(Manifest.permission.CAMERA)
+                        == PackageManager.PERMISSION_GRANTED,
+                activeMode,
+                activeBabyStation,
+                sleepingBabyUi,
+                babySettingsKnown,
+                localExpected,
+                remoteExpected,
+                micTxExpected,
+                listening,
+                SessionBus.canonicalVideoRotation,
+                remoteSurfaceValid,
+                localSurfaceValid,
+                transfer != null && transfer.active,
+                transfer == null ? 0 : transfer.percent,
+                d == null ? "Unknown" : d.state,
+                d == null ? "Unknown" : d.network,
+                d == null ? "None" : d.codec,
+                d == null ? -1L : d.heartbeatAgeMs,
+                d == null ? -1L : d.rttMs,
+                d == null ? 0 : d.audioQueue,
+                d == null ? 0 : d.videoQueue,
+                d == null ? 0 : d.audioJitterFrames,
+                d == null ? 0L : d.audioTxPackets,
+                d == null ? 0L : d.audioRxPackets,
+                d == null ? 0L : d.videoTxPackets,
+                d == null ? 0L : d.videoRxPackets,
+                d == null ? 0L : d.audioConcealedFrames,
+                d == null ? 0L : d.audioPlaybackDrops,
+                d == null ? 0L : d.videoDroppedTxPackets,
+                d == null ? 0L : d.videoLostRxUnits,
+                d == null ? 0f : d.videoRxFps,
+                d == null ? 0 : d.recoveries,
+                SessionBus.remoteVideoRotation,
+                SessionBus.localVideoRotation);
     }
 
     private void showReliabilityDiagnostics() {
