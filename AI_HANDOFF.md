@@ -1,10 +1,10 @@
 # QuietLink AI handoff / continuity guide
 
-Updated: **2026-09-25**  
+Updated: **2026-09-26**  
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.64 / versionCode 76**  
+Current release: **v0.3.65 / versionCode 77**  
 Latest release CI: **passed**
 
 ---
@@ -163,6 +163,25 @@ Internet-path recovery still needs to become transport-independent.
 
 # 6. Online P2P work completed
 
+
+## v0.3.65 — Quick App Test export + Wi-Fi Direct radio-off guidance
+
+User evidence from phones 1, 2 and 4:
+- Phone 1 completed the new Voice Quick App Test repeatedly with 13 PASS / 0 WARN / 0 FAIL / 5 N/A.
+- The stock AlertDialog allowed the long report body to consume the visible height on one phone, leaving COPY/RUN/CLOSE controls below the viewport.
+- User requested the report be downloadable like the normal developer diagnostic log.
+- During the shown no-router Direct attempt, phone 1/host reported `wifi_radio=0` repeatedly while phone 2/join reported Wi-Fi Direct enabled and active discovery attempts. This is not evidence that the Wi-Fi Direct connector itself failed: Android Wi-Fi Direct still requires the Wi-Fi radio ON even though no router/internet is required.
+- Separate v0.3.64 evidence on another phone shows the new active room probe produced `lan_candidate`, `code_connect_attempt path=lan`, then `code_connect_success path=lan`, so same-router LAN repair is functioning in at least that observed session.
+
+Implemented in v0.3.65:
+- Every completed Quick App Test is persisted privately as a privacy-safe text report.
+- Developer tools now expose `Export latest Quick App Test (.txt)` during and after calls.
+- `Export log + profiles (.txt)` also includes a `LATEST QUICK APP TEST` section when available.
+- Replaced the stock long AlertDialog with a custom fixed-footer Quick App Test dialog so RUN AGAIN / SAVE .TXT / COPY / CLOSE remain reachable on smaller screens.
+- Added privacy-safe `APP version_start version=<version>` startup diagnostics for multi-phone comparison.
+- When Wi-Fi Direct is waiting specifically because Android Wi-Fi is OFF, the live session screen shows `TURN WI-FI ON FOR DIRECT`; it opens Android's Wi-Fi panel. The existing P2P retry loop keeps running and can continue when the user returns.
+- Status wording now explicitly says no router is required, avoiding confusion between Wi-Fi radio state and infrastructure Wi-Fi association.
+- No QL5, media framing, LAN selection, Wi-Fi Direct discovery/connect algorithm, recovery ownership, or session-state ownership was changed. Architecture Phase 0 remains active.
 
 ## v0.3.64 — Architecture hardening Phase 0 + in-call Quick App Test
 
@@ -966,22 +985,15 @@ Before enabling the green status dot, both session control/authentication and us
 
 # 10. NEXT ACTION
 
-## Primary next checkpoint: v0.3.64 regression baseline, then Phase 1A shadow state
+## Primary next checkpoint: v0.3.65 three-phone regression baseline
 
-1. Update the fresh fourth phone and at least one existing peer to v0.3.64.
-2. Start a normal real Voice or Video call, unlock Developer tools if needed, then run **QUICK APP TEST • 6-second scan** after the call has been stable for about 10 seconds.
-3. COPY REPORT and return the pasted report. The scan itself must not alter mic/camera/chat/Baby/network state.
-4. In the same release, re-run the v0.3.63 device checkpoints:
-   - fourth-phone front/rear/fullscreen orientation with zero manual tuning,
-   - same-router CODE where LAN must win before the 8-second Wi-Fi Direct fallback.
-5. If either checkpoint fails, export LOG + PROFILES before tuning/changing network settings and fix that regression before continuing architecture migration.
-6. Once the v0.3.64 baseline is clean, begin **Architecture Roadmap Phase 1A**:
-   - add explicit `SessionState` + immutable `SessionSnapshot`,
-   - derive them from the existing production booleans,
-   - run shadow-only mismatch diagnostics,
-   - do **not** make the new state machine authoritative yet.
-7. Keep the connection-router rewrite for Phase 2. LAN/Wi-Fi Direct/Internet connector ownership should not move until the shadow state model is proven by CI + real-device Quick App Test evidence.
-8. After the regression shield is stable, continue milestone 7 internet P2P work through the isolated architecture rather than adding more shared `SessionService` coupling.
+1. Update phones 1, 2 and 4 to v0.3.65. The new `version_start` log marker should make each export self-identifying by app version.
+2. On phone 1 and phone 2, retry **no-router Wi-Fi Direct** with Android Wi-Fi radio ON on both phones. They do not need to join a router/network. If either radio is OFF, use the new `TURN WI-FI ON FOR DIRECT` button and return to the same session.
+3. After the call connects, run Quick App Test on each phone, then use **SAVE .TXT** or Developer -> **Export latest Quick App Test (.txt)**. Return the .txt reports. The combined log export will also contain the latest test automatically.
+4. Re-run the same-router CODE check. Expected evidence remains `udp_probe_tx/rx -> lan_candidate -> code_connect_attempt path=lan -> code_connect_success path=lan` before Wi-Fi Direct fallback.
+5. Re-run phone 4 zero-tuning front-camera, rear-camera and fullscreen orientation with all participating phones on the same current release. Export LOG + PROFILES if wrong before any tuning.
+6. Do not start Phase 1A authoritative work yet. Once phones 1/2/4 produce a clean baseline, begin the **shadow-only SessionState/SessionSnapshot** model from `ARCHITECTURE_ROADMAP.md`; existing booleans remain authoritative during that phase.
+7. Continue milestone 7 internet P2P only through the hardening architecture. Do not add new shared `SessionService` ownership while Phase 0/1 are in progress.
 
 # 11. Release/build rules
 
@@ -1032,6 +1044,7 @@ Start with these when resuming:
 - `app/src/main/java/is/quietlink/app/DeviceIdentity.java`
 - `app/src/main/java/is/quietlink/app/MainActivity.java` — lobby/status UI and call UI
 - `app/src/main/java/is/quietlink/app/DevQuickTest.java` — pure-Java live-call regression evaluator
+- `app/src/main/java/is/quietlink/app/DevQuickTestStore.java` — private persisted latest Quick App Test for export/combined diagnostics
 - `ARCHITECTURE_ROADMAP.md` — staged core-isolation plan and release gates
 - `rendezvous/server.js` — standalone signaling server
 - `.github/workflows/android-debug-apk.yml` — build/update publication

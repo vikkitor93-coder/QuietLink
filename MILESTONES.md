@@ -1,7 +1,7 @@
 # QuietLink milestones
 
-Updated: 2026-09-25  
-Current release: **v0.3.64**  
+Updated: 2026-09-26  
+Current release: **v0.3.65**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -167,8 +167,14 @@ Source of truth: **GitHub main**
   - ✅ In-call Developer **QUICK APP TEST • 6-second scan**
   - ✅ Privacy-safe copyable PASS/WARN/FAIL/N/A report
   - ✅ CI self-test for the evaluator
-  - ⏳ Human: run Quick App Test during Voice/Video/Baby calls and return the copied report
-  - ⏳ Human: re-confirm v0.3.63 orientation + same-WiFi LAN fixes on v0.3.64
+  - ✅ Human: healthy Voice Quick App Test captured on phone 1 (13 PASS / 0 WARN / 0 FAIL / 5 N/A)
+  - ✅ v0.3.65 persists/exports the latest Quick App Test and keeps report actions visible on small phones
+  - ✅ v0.3.65 adds privacy-safe app-version startup marker for multi-phone diagnosis
+  - ⏳ Human: run/export Quick App Test on phones 1, 2 and 4 after all are on v0.3.65
+  - ✅ Same-WiFi v0.3.64 evidence: active room probe found LAN candidate and connected path=lan
+  - 🟡 Direct attempt diagnosis: host Wi-Fi radio was OFF; joiner discovery was active. v0.3.65 adds one-tap Wi-Fi panel guidance without changing P2P core logic
+  - ⏳ Human: retry no-router Wi-Fi Direct with Wi-Fi radio ON on both phones
+  - ⏳ Human: re-confirm fourth-phone orientation after all three phones run the same release
 - ⏳ **Phase 1 — shadow session state machine**
   - Next only after Phase 0 baseline is clean
 - ⏳ **Phase 2 — isolated ConnectionRouter + LAN/Wi-Fi Direct/Internet connectors**
@@ -182,7 +188,7 @@ See `ARCHITECTURE_ROADMAP.md` for entry/exit criteria and the no-big-bang-rewrit
 
 ## Current truth
 
-v0.3.64 is the active validation release. It preserves the v0.3.63 rotation/LAN repair and starts the architecture-hardening regression shield with a live Quick App Test and CI evaluator. The next architectural phase remains shadow-only until the current device behavior is proven clean.
+v0.3.65 is the active validation release. It keeps Architecture Roadmap Phase 0 in place, makes Quick App Test reports persist/export cleanly, and improves the Wi-Fi Direct radio-off recovery UX. The uploaded evidence confirms same-WiFi LAN can win through the active room-probe path; the reported no-router Direct attempt had the host Wi-Fi radio disabled, so Phase 1 remains blocked on a clean three-phone baseline rather than treating that attempt as a connector regression.
 
 v0.3.48 production rendezvous matching is user-validated. v0.3.49 added the first encrypted internet session path and v0.3.50 fixed the older-phone updater signer false-positive. v0.3.51 adds a developer-only video rotation lab so the remaining cross-device orientation issue can be measured before selecting a new production formula. The permanent-Pi/internet Voice test remains queued immediately after the orientation checkpoint.
 

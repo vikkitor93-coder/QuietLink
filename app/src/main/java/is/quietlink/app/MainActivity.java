@@ -29,10 +29,12 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     private static final int REQ_EXPORT_LOG = 91;
     private static final int REQ_EXPORT_PROFILES = 92;
     private static final int REQ_SAVE_CHAT_FILE = 93;
+    private static final int REQ_EXPORT_QUICK_TEST = 94;
 
     private LinearLayout root;
     private LinearLayout joinContent;
     private TextView status, verification, levelText;
+    private Button directWifiButton;
     private ImageView remoteVideo;
     private ImageView localPreview;
     private TextureView remoteVideoTexture;
@@ -129,6 +131,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         QuietLog.init(this);
+        QuietLog.log("APP", "version_start", "version=" + quickAppVersionName());
         QuietLog.log("UI", "activity_create",
                 "orientation=" + getResources().getConfiguration().orientation);
         getWindow().setStatusBarColor(bg());
@@ -839,6 +842,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         if (SessionBus.active && !devDummySession) {
             String[] options = {
                     "QUICK APP TEST • 6-second scan",
+                    "Export latest Quick App Test (.txt)",
                     "Live diagnostics",
                     "H.264 codec info",
                     "ROTATE ONLY • compact live panel",
@@ -852,13 +856,14 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     .setTitle("🛠 Developer tools")
                     .setItems(options, (dialog, which) -> {
                         if (which == 0) showQuickAppTest();
-                        else if (which == 1) showReliabilityDiagnostics();
-                        else if (which == 2) showH264CodecInfo();
-                        else if (which == 3) showQuickRotationPanel();
-                        else if (which == 4) showVideoRotationLab();
-                        else if (which == 5) reportDiagnosticLogToGitHub();
-                        else if (which == 6) exportDiagnosticLog();
-                        else if (which == 7) exportVideoProfiles();
+                        else if (which == 1) exportQuickAppTest();
+                        else if (which == 2) showReliabilityDiagnostics();
+                        else if (which == 3) showH264CodecInfo();
+                        else if (which == 4) showQuickRotationPanel();
+                        else if (which == 5) showVideoRotationLab();
+                        else if (which == 6) reportDiagnosticLogToGitHub();
+                        else if (which == 7) exportDiagnosticLog();
+                        else if (which == 8) exportVideoProfiles();
                         else {
                             QuietLog.clear(this);
                             Toast.makeText(this, "Diagnostic log cleared", Toast.LENGTH_SHORT).show();
@@ -881,6 +886,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 "Live diagnostics",
                 "Report log to GitHub",
                 "Online rendezvous test setup",
+                "Export latest Quick App Test (.txt)",
                 "Export log + profiles (.txt)",
                 "Export profiles only (.txt)",
                 "Clear diagnostic log"
@@ -900,8 +906,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                     else if (which == 8) showReliabilityDiagnostics();
                     else if (which == 9) reportDiagnosticLogToGitHub();
                     else if (which == 10) showOnlineRendezvousTestSetup();
-                    else if (which == 11) exportDiagnosticLog();
-                    else if (which == 12) exportVideoProfiles();
+                    else if (which == 11) exportQuickAppTest();
+                    else if (which == 12) exportDiagnosticLog();
+                    else if (which == 13) exportVideoProfiles();
                     else {
                         QuietLog.clear(this);
                         Toast.makeText(this, "Diagnostic log cleared", Toast.LENGTH_SHORT).show();
@@ -1870,6 +1877,18 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 "QuietLink-video-profiles.txt");
     }
 
+    private void exportQuickAppTest() {
+        if (!DevQuickTestStore.hasReport(this)) {
+            Toast.makeText(this,
+                    "Run Quick App Test once first",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        launchTextExport(
+                REQ_EXPORT_QUICK_TEST,
+                "QuietLink-quick-app-test.txt");
+    }
+
     private void launchTextExport(int requestCode, String fileName) {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -1930,7 +1949,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         }
 
         if ((requestCode != REQ_EXPORT_LOG
-                && requestCode != REQ_EXPORT_PROFILES)
+                && requestCode != REQ_EXPORT_PROFILES
+                && requestCode != REQ_EXPORT_QUICK_TEST)
                 || resultCode != RESULT_OK
                 || data == null || data.getData() == null) return;
         try (java.io.OutputStream out =
@@ -1938,13 +1958,17 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             if (out == null) throw new java.io.IOException("No output stream");
             String payload = requestCode == REQ_EXPORT_PROFILES
                     ? QuietLog.exportProfilesText(this)
-                    : QuietLog.exportText(this);
+                    : requestCode == REQ_EXPORT_QUICK_TEST
+                        ? DevQuickTestStore.read(this)
+                        : QuietLog.exportText(this);
             out.write(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             out.flush();
             Toast.makeText(this,
                     requestCode == REQ_EXPORT_PROFILES
                             ? "Video profiles exported"
-                            : "Privacy-safe log + profiles exported",
+                            : requestCode == REQ_EXPORT_QUICK_TEST
+                                ? "Quick App Test exported"
+                                : "Privacy-safe log + profiles exported",
                     Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
             Toast.makeText(this, "Could not export text file", Toast.LENGTH_LONG).show();
@@ -1961,47 +1985,78 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             return;
         }
 
+        final android.app.Dialog dialog = new android.app.Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout box = column();
+        box.setPadding(dp(16),dp(14),dp(16),dp(12));
+        box.setBackground(makeRound(Color.rgb(70,70,70),14));
+
+        TextView title = text("Quick App Test", 22, Color.WHITE, false);
+        box.addView(title, lp(-1,-2,0,0,0,6));
+        box.addView(text(
+                "Safe passive scan. It does not mute, switch camera, send chat, disconnect, or change call settings.",
+                12, Color.WHITE, false),
+                lp(-1,-2,0,0,0,8));
+
         TextView reportText = text("", 12, Color.WHITE, false);
-        reportText.setPadding(dp(16),dp(12),dp(16),dp(12));
+        reportText.setPadding(dp(4),dp(4),dp(4),dp(8));
         reportText.setTextIsSelectable(true);
 
         ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
         scroll.addView(reportText, new ScrollView.LayoutParams(-1,-2));
+        box.addView(scroll, new LinearLayout.LayoutParams(-1,0,1f));
 
         final DevQuickTest.Report[] latest = new DevQuickTest.Report[1];
 
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-                .setTitle("Quick App Test")
-                .setMessage("Safe passive scan. QuietLink will not mute, switch camera, send chat, disconnect, or change call settings.")
-                .setView(scroll)
-                .setPositiveButton("Run again", null)
-                .setNeutralButton("Copy report", null)
-                .setNegativeButton("Close", null)
-                .create();
+        LinearLayout actions1 = row();
+        Button runAgain = primary("RUN AGAIN");
+        Button save = secondary("SAVE .TXT");
+        actions1.addView(runAgain, weightLp());
+        actions1.addView(save, weightLp());
+        box.addView(actions1, lp(-1,dp(46),0,8,0,5));
 
+        LinearLayout actions2 = row();
+        Button copy = secondary("COPY");
+        Button close = secondary("CLOSE");
+        actions2.addView(copy, weightLp());
+        actions2.addView(close, weightLp());
+        box.addView(actions2, lp(-1,dp(44),0,0,0,0));
+
+        runAgain.setOnClickListener(v -> runQuickAppTestScan(reportText, latest));
+        save.setOnClickListener(v -> exportQuickAppTest());
+        copy.setOnClickListener(v -> {
+            String payload = latest[0] == null
+                    ? DevQuickTestStore.read(this)
+                    : latest[0].render(quickAppVersionName());
+            if (payload == null || payload.trim().isEmpty()) {
+                Toast.makeText(this,
+                        "Wait for the scan to finish",
+                        Toast.LENGTH_SHORT).show();
+                return;
+            }
+            android.content.ClipboardManager clipboard =
+                    (android.content.ClipboardManager)
+                            getSystemService(CLIPBOARD_SERVICE);
+            if (clipboard != null) {
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText(
+                        "QuietLink Quick App Test", payload));
+                Toast.makeText(this,
+                        "Privacy-safe Quick App Test copied",
+                        Toast.LENGTH_SHORT).show();
+            }
+        });
+        close.setOnClickListener(v -> dialog.dismiss());
+
+        dialog.setContentView(box);
         dialog.setOnShowListener(d -> {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
-                    .setOnClickListener(v -> runQuickAppTestScan(reportText, latest));
-            dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL)
-                    .setOnClickListener(v -> {
-                        if (latest[0] == null) {
-                            Toast.makeText(this,
-                                    "Wait for the scan to finish",
-                                    Toast.LENGTH_SHORT).show();
-                            return;
-                        }
-                        String payload = latest[0].render(quickAppVersionName());
-                        android.content.ClipboardManager clipboard =
-                                (android.content.ClipboardManager)
-                                        getSystemService(CLIPBOARD_SERVICE);
-                        if (clipboard != null) {
-                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText(
-                                    "QuietLink Quick App Test", payload));
-                            Toast.makeText(this,
-                                    "Privacy-safe Quick App Test copied",
-                                    Toast.LENGTH_SHORT).show();
-                        }
-                    });
+            Window w = dialog.getWindow();
+            if (w == null) return;
+            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            int height = (int)(getResources().getDisplayMetrics().heightPixels * 0.86f);
+            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, height);
+            w.setGravity(Gravity.CENTER);
             runQuickAppTestScan(reportText, latest);
         });
         dialog.show();
@@ -2026,7 +2081,9 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             DevQuickTest.Metrics after = captureQuickAppTestMetrics();
             DevQuickTest.Report report = DevQuickTest.evaluate(before, after);
             latest[0] = report;
-            reportText.setText(report.render(quickAppVersionName()));
+            String rendered = report.render(quickAppVersionName());
+            reportText.setText(rendered);
+            DevQuickTestStore.save(this, rendered);
             QuietLog.log("DEV", "quick_app_test",
                     "pass=" + report.passCount
                             + " warn=" + report.warnCount
@@ -2613,6 +2670,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         babyOwnCameraButton = null;
         babyStateText = null;
         babyOwnStateText = null;
+        directWifiButton = null;
         sleepingBabyUi = SessionBus.sleepingBaby;
 
         boolean parent = !activeBabyStation && activeMode == SessionService.MODE_BABY;
@@ -2682,7 +2740,15 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
             status = text(devDummySession ? "DEV • local dummy session • no network" : SessionBus.latestStatus,
                     visualSession ? 11 : 13, muted(), false);
-            root.addView(status, lp(-1,-2,0,2,0,visualSession ? 5 : 10));
+            root.addView(status, lp(-1,-2,0,2,0,visualSession ? 5 : 4));
+            if (!devDummySession) {
+                directWifiButton = secondary("TURN WI-FI ON FOR DIRECT");
+                directWifiButton.setTextSize(11);
+                directWifiButton.setVisibility(View.GONE);
+                directWifiButton.setOnClickListener(v -> openDirectWifiPanel());
+                root.addView(directWifiButton, lp(-1,dp(42),0,0,0,6));
+                updateDirectWifiAction(SessionBus.latestStatus);
+            }
             verification = null;
         } else {
             status = null;
@@ -4807,6 +4873,31 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     private String randomCode() { return String.format("%06d", new SecureRandom().nextInt(1_000_000)); }
     private String formatCode(String c) { return c != null && c.length() == 6 ? c.substring(0,3) + " " + c.substring(3) : c; }
 
+    private void updateDirectWifiAction(String currentStatus) {
+        if (directWifiButton == null) return;
+        boolean needsWifi = currentStatus != null
+                && currentStatus.contains("turn Wi-Fi radio on");
+        directWifiButton.setVisibility(needsWifi ? View.VISIBLE : View.GONE);
+    }
+
+    private void openDirectWifiPanel() {
+        try {
+            Intent intent = Build.VERSION.SDK_INT >= 29
+                    ? new Intent(Settings.Panel.ACTION_WIFI)
+                    : new Intent(Settings.ACTION_WIFI_SETTINGS);
+            startActivity(intent);
+            QuietLog.log("P2P", "wifi_enable_ui_opened", "source=session");
+        } catch (Exception first) {
+            try {
+                startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS));
+            } catch (Exception ignored) {
+                Toast.makeText(this,
+                        "Open Android Wi-Fi settings and turn Wi-Fi on",
+                        Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+
     @Override public void onStatus(String s) {
         runOnUiThread(() -> {
             if (SessionBus.active && restoringPersistedSession && !renderedSession) {
@@ -4818,6 +4909,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 showSession(SessionBus.code, SessionBus.host);
             }
             if (status != null) status.setText(s);
+            updateDirectWifiAction(s);
             if (status == null && sleepingBabyUi && activeMode == SessionService.MODE_BABY
                     && !activeBabyStation && levelText != null) {
                 if (s != null && s.contains("not responding")) {

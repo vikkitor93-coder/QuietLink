@@ -398,3 +398,17 @@
 337. CI evaluator gate: GitHub Actions must compile/run `DevQuickTestSelfTest` before the Android build and fail the workflow if the evaluator's healthy/broken fixtures no longer behave as expected.
 338. v0.3.64 rotation regression: repeat tests 320-322; ROT_REL2 front/rear/fullscreen behavior must remain unchanged by the developer-test addition.
 339. v0.3.64 same-WiFi regression: repeat tests 323-327; LAN must still win before Wi-Fi Direct when both phones share a normal router.
+
+
+340. v0.3.65 updater continuity: update from v0.3.64 in place; package data, known devices, calibration profiles, latest Quick App Test report and signing continuity must remain intact.
+341. Quick App Test footer visibility: on the smallest test phone, run the in-call Quick App Test and confirm RUN AGAIN, SAVE .TXT, COPY and CLOSE remain visible without scrolling to an unreachable area.
+342. Quick App Test persistence: complete a scan, close the dialog, leave/disconnect the call, reopen Developer tools and confirm Export latest Quick App Test (.txt) is still available.
+343. Quick App Test file export: save QuietLink-quick-app-test.txt through Android ACTION_CREATE_DOCUMENT and confirm it contains generation time, app version, PASS/WARN/FAIL/N/A results and manual spot checks.
+344. Quick App Test privacy: exported report must contain no peer/device name, IP/MAC, room code/token, fingerprint/key, chat text or media content.
+345. Combined export: after at least one scan, Export log + profiles (.txt) must include a LATEST QUICK APP TEST section in addition to calibration + trace data.
+346. Version marker: start v0.3.65 and confirm privacy-safe diagnostics contain APP version_start version=0.3.65 without device/network identifiers.
+347. Wi-Fi Direct radio-off CTA: start a no-router CODE session with one phone's Wi-Fi radio OFF. QuietLink must show TURN WI-FI ON FOR DIRECT and the status must clarify that no router is required.
+348. Wi-Fi panel handoff: tap TURN WI-FI ON FOR DIRECT, enable Wi-Fi in Android's panel, return to QuietLink and confirm the existing P2P retry loop continues without restarting the pairing code/session.
+349. No-router Direct regression: with Wi-Fi radio ON on both phones but neither joined to a router, HOST/JOIN the same CODE and confirm Wi-Fi Direct establishes the QL5 session.
+350. Same-router LAN regression: repeat the v0.3.64 room-probe test and confirm LAN still connects before the 8-second Wi-Fi Direct fallback.
+351. Core-change guard: v0.3.65 must not alter QL5 protocol, media framing, LanDiscovery selection, WifiDirectHelper discovery/connect retry algorithm, manual-disconnect guard or recovery ownership beyond the radio-off status wording/UI handoff.

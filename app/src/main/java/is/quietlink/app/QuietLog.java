@@ -208,6 +208,12 @@ public final class QuietLog {
 
         out.append(exportProfilesText(context)).append('\n');
 
+        String quickTest = DevQuickTestStore.read(context);
+        if (quickTest != null && !quickTest.trim().isEmpty()) {
+            out.append("LATEST QUICK APP TEST\n");
+            out.append(quickTest.trim()).append("\n\n");
+        }
+
         if (app == null) return out.append("(logger unavailable)\n").toString();
         File f = new File(app.getFilesDir(), FILE_NAME);
         if (!f.exists()) return out.append("(no trace entries yet)\n").toString();

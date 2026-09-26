@@ -1,7 +1,7 @@
 # QuietLink architecture hardening roadmap
 
-Updated: 2026-09-25
-Status: **Phase 0 started in v0.3.64**
+Updated: 2026-09-26
+Status: **Phase 0 active; v0.3.65 strengthens evidence/export before Phase 1**
 Goal: stop new work in one feature from silently breaking mature core behavior.
 
 This is an incremental hardening track. It is **not** permission to rewrite QuietLink all at once. Every phase must leave the app installable over the previous release, preserve QL5 security/signing continuity, and keep LAN/Wi-Fi Direct usable even when online work fails.
@@ -196,7 +196,9 @@ Final target: adding an Internet feature should normally touch InternetConnector
 
 ## Current next work
 
-1. Validate v0.3.64 Quick App Test on a real call.
-2. Re-run the v0.3.63 fourth-phone orientation + same-WiFi LAN checkpoint on v0.3.64.
-3. If those remain stable, begin **Phase 1A shadow session state**.
-4. Do not begin authoritative connection-router replacement until the shadow state and Quick App Test baseline are clean.
+1. Update phones 1, 2 and 4 to v0.3.65 and export one Quick App Test from each so version + live-session evidence are unambiguous.
+2. Retry no-router Wi-Fi Direct with the Wi-Fi radio ON on both phones; the v0.3.64 failure evidence showed the host radio OFF, while the joiner was already searching.
+3. Re-run the fourth-phone front/rear/fullscreen orientation checkpoint with all participating phones on the same release.
+4. Keep the already-proven same-WiFi LAN room-probe path as a regression gate.
+5. Only after those are clean, begin **Phase 1A shadow session state**.
+6. Do not begin authoritative connection-router replacement until the shadow state and Quick App Test baseline are clean.

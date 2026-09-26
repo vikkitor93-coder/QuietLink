@@ -1,4 +1,4 @@
-# QuietLink 0.3.64
+# QuietLink 0.3.65
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -29,6 +29,16 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - On devices where modern Android `SigningInfo` exposes the certificate history, QuietLink also requires the downloaded APK history to contain both pinned certificates and the current APK signer to be the pinned v2 signer.
 - On older/OEM PackageManager implementations that only expose the legacy current signer, QuietLink allows only the same pinned old→v2 transition; Android's package installer still performs the platform signature-lineage verification.
 - No new private signing material is committed to GitHub.
+
+## 0.3.65 Quick App Test export + Wi-Fi Direct radio guidance
+- The latest Quick App Test is now saved privately after every completed scan.
+- Developer tools exposes **Export latest Quick App Test (.txt)** both during and outside an active call.
+- The regular **Export log + profiles (.txt)** also embeds the latest Quick App Test so one file can carry the scan plus detailed trace.
+- The in-call Quick App Test now uses a custom fixed-footer dialog with always-visible **RUN AGAIN / SAVE .TXT / COPY / CLOSE** controls, including on smaller phones where AlertDialog buttons could fall below the viewport.
+- App startup now writes a privacy-safe version marker to diagnostics so multi-phone reports can be matched to the installed build without guessing.
+- The reported phone 1 -> phone 2 direct-connect attempt showed the host Wi-Fi radio disabled while the joiner was already running Wi-Fi Direct discovery. Wi-Fi Direct requires the Android Wi-Fi radio to be ON even though it does **not** require joining a router or having internet access.
+- When QuietLink detects that exact wait state, the session screen now shows **TURN WI-FI ON FOR DIRECT**. It opens Android's Wi-Fi panel; QuietLink keeps its existing P2P readiness retry loop alive and can continue as soon as Android reports Wi-Fi/P2P ready.
+- No QL5, media framing, LAN candidate selection, Wi-Fi Direct discovery/connect algorithm, or recovery ownership was moved in this release. Architecture Roadmap Phase 0 remains active until the three-phone baseline is clean.
 
 ## 0.3.64 architecture hardening Phase 0 + Quick App Test
 - New `ARCHITECTURE_ROADMAP.md` defines the incremental plan for isolating mature core systems instead of performing a risky rewrite.

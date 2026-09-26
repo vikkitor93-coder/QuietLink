@@ -216,7 +216,7 @@ public final class WifiDirectHelper implements AutoCloseable {
     private void showWaitingForP2p(int attempt) {
         boolean wifiOn = wifiRadioEnabled();
         if (!wifiOn) {
-            SessionBus.status("Wi-Fi Direct waiting • turn Wi-Fi radio on");
+            SessionBus.status("Wi-Fi Direct waiting • turn Wi-Fi radio on (no router required)");
         } else {
             SessionBus.status("Wi-Fi Direct • waiting for Android P2P to become ready…");
         }
