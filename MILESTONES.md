@@ -1,7 +1,7 @@
 # QuietLink milestones
 
 Updated: 2026-09-26  
-Current release: **v0.3.67**  
+Current release: **v0.3.68**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -188,7 +188,7 @@ See `ARCHITECTURE_ROADMAP.md` for entry/exit criteria and the no-big-bang-rewrit
 
 ## Current truth
 
-v0.3.67 is the active validation release. v0.3.66 added the connection choice and internet reconnect below, and v0.3.67 lets each phone use its own Wi-Fi or mobile data. Neither is validated on devices yet. v0.3.65 keeps Architecture Roadmap Phase 0 in place, makes Quick App Test reports persist/export cleanly, and improves the Wi-Fi Direct radio-off recovery UX. The uploaded evidence confirms same-WiFi LAN can win through the active room-probe path; the reported no-router Direct attempt had the host Wi-Fi radio disabled, so Phase 1 remains blocked on a clean three-phone baseline rather than treating that attempt as a connector regression.
+v0.3.68 is the active validation release and adds QR code join and the popout fix below, not yet validated on devices. v0.3.66 added the connection choice and internet reconnect, and v0.3.67 lets each phone use its own Wi-Fi or mobile data. The user reported an INTERNET call between mobile data and Wi-Fi working on v0.3.67; the rest of TESTING.md items 352 to 367 are still open. v0.3.65 keeps Architecture Roadmap Phase 0 in place, makes Quick App Test reports persist/export cleanly, and improves the Wi-Fi Direct radio-off recovery UX. The uploaded evidence confirms same-WiFi LAN can win through the active room-probe path; the reported no-router Direct attempt had the host Wi-Fi radio disabled, so Phase 1 remains blocked on a clean three-phone baseline rather than treating that attempt as a connector regression.
 
 v0.3.48 production rendezvous matching is user-validated. v0.3.49 added the first encrypted internet session path and v0.3.50 fixed the older-phone updater signer false-positive. v0.3.51 adds a developer-only video rotation lab so the remaining cross-device orientation issue can be measured before selecting a new production formula. The permanent-Pi/internet Voice test remains queued immediately after the orientation checkpoint.
 
@@ -196,9 +196,16 @@ The Online status dot remains conservative/red while `onlineCallsAvailable=false
 
 Local LAN / Hotspot / Wi-Fi Direct remains the working/default path and must continue working even if every online component is unavailable.
 
-## v0.3.67: internet calls between Wi-Fi and mobile data
+## v0.3.68: QR code join and popout fix
 
 NOT validated on devices.
+
+- ⏳ Popout only during a video call, and closes when the call ends. Two-phone test procedure: TESTING.md items 368 to 374.
+- ⏳ Host QR on the HOST lobby and voice waiting screen, SCAN QR on the CODE tab, and a route that follows the host. Test procedure: TESTING.md items 375 to 383.
+
+## v0.3.67: internet calls between Wi-Fi and mobile data
+
+NOT validated on devices beyond this report: on 2026-11-05 the user reported that an INTERNET call between a phone on mobile data and a phone on Wi-Fi works on v0.3.67 ("it works"). No other item is claimed as passed, and `onlineCallsAvailable` is unchanged.
 
 - ⏳ MOBILE NETWORK renamed INTERNET. Each phone uses its validated default network, then cellular, for calls and reconnects.
 - ⏳ Two-phone test procedure: TESTING.md item 367.

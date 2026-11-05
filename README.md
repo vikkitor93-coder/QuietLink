@@ -1,4 +1,4 @@
-# QuietLink 0.3.67
+# QuietLink 0.3.68
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -31,7 +31,15 @@ Local calling never depends on the online service. The permanent rendezvous can 
 - Human-readable verification phrase.
 - Encryption is mandatory.
 
+## 0.3.68 QR code join and popout fix (not yet validated on devices)
+- The popout video now appears only during a video call, including Baby Monitor and Sleeping Baby calls, and closes when the call ends. It used to appear at the lobby after a video call, because Android 12 and newer enter it automatically from a setting the app never turned off.
+- The HOST lobby and the voice waiting screen show a QR of the code. The QR also carries the host's **WI-FI DIRECT / INTERNET** choice.
+- The CODE tab has **SCAN QR**. A scan sets the route to match the host and starts the join. Typing still works.
+- A scan only accepts the exact QuietLink format. Nothing is opened from a scan, and the code and scanned text are not logged.
+- The app asks for the camera only when SCAN QR is tapped. The new dependency is ZXing core 3.5.3.
+
 ## 0.3.67 internet calls no longer need mobile data on both phones (not yet validated on devices)
+- User report, 2026-11-05: an INTERNET call between a phone on mobile data and a phone on Wi-Fi works on v0.3.67. Other items are not claimed.
 - **MOBILE NETWORK** is now **INTERNET**, and **RESTART ON MOBILE NETWORK** is now **RESTART ON INTERNET**. Both phones still pick this option.
 - Each phone uses its current internet connection instead of forcing mobile data, so a call can run between Wi-Fi and mobile data. A phone on working Wi-Fi can no longer be forced onto mobile data.
 - If a phone's connection drops during a call, internet reconnect picks up whatever connection is left.

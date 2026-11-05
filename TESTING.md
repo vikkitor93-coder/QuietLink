@@ -431,3 +431,24 @@ Connection choice and internet reconnect. NOT YET VALIDATED ON DEVICES. Items 35
 365. Service exit paths: disconnect, force-stop and let recovery run out. Confirm no cellular request remains (`dumpsys connectivity` shows no QuietLink request) and the updater is not pinned to cellular.
 366. v0.3.66 updater continuity: from a v0.3.65 phone, tap CHECK UPDATE and update in place. Confirm package data, known devices and settings survive, WI-FI DIRECT is selected by default, and CHECK UPDATE then reports up to date.
 367. Wi-Fi to mobile data call: one phone with Wi-Fi off and mobile data on, the other on Wi-Fi with mobile data on, both on INTERNET and on different networks. Confirm the call connects with audio both ways and the Wi-Fi phone logs `state=current_internet`. Repeat with Wi-Fi turned off on that phone during the call and confirm it reconnects over mobile data.
+
+User-reported evidence: on 2026-11-05 the user reported that an INTERNET call between a phone on mobile data and a phone on Wi-Fi works on v0.3.67 ("it works"). This records that report only. No other item is claimed as passed.
+
+v0.3.68: QR code join and popout fix.
+
+368. Popout at the lobby, Android 12 or newer: end a video call, return to the lobby and press Home. Confirm no popout appears. Repeat after a voice call, after a failed join and on a fresh app start.
+369. Popout at the lobby, Android 11 or older: repeat item 368. Confirm no popout appears.
+370. Popout closes with the call: put a video call into the popout, then end it from the other phone. Confirm the popout closes, and that reopening the app shows the lobby.
+371. Popout before connecting: start a video or Baby session that has not connected, then press Home. Confirm no popout appears.
+372. Popout during a real call: confirm the popout still appears on Home during a video call, a Baby Monitor call and a Sleeping Baby call, shows the right video, and returns to the full call when reopened.
+373. Popout during reconnect: drop the connection during a video call while in the popout. Confirm it stays open while the call reconnects, and closes if recovery runs out.
+374. Popout on switching to voice: switch a video call to voice while in the popout. Confirm the popout closes and the call continues.
+375. Host QR: on the HOST lobby, confirm a QR with a white border shows under the code. Change WI-FI DIRECT to INTERNET and back, and confirm a scan after each change sets the matching route.
+376. Waiting screen QR: start a voice host session and confirm the QR shows while waiting and disappears when the other phone connects. Tap RESTART ON INTERNET and confirm a scan joins on INTERNET.
+377. Scan to join: on the CODE tab tap SCAN QR, then scan a host QR. Confirm the join starts with no more taps, the camera closes, and the joiner's route matches the host, including when it was set to the other route first.
+378. Foreign QR codes: scan a website QR, a plain text QR, and a QR holding `QL1:relay:123456`. Confirm each shows "That is not a QuietLink host QR", nothing opens, scanning continues, and no join starts.
+379. Camera permission: deny the camera when SCAN QR asks. Confirm the message appears, no camera opens, and typing a code still works. Allow it on the next tap and confirm the scanner opens without another tap.
+380. Camera release: open the scanner, then leave it with CANCEL, with Back and with Home. Confirm the camera indicator goes off each time, a typed partial code is still there, and a video call can use the camera afterwards.
+381. Scanner during a session: confirm SCAN QR cannot be reached during a session, and that a call starting while the scanner is open closes it.
+382. Smallest phone: on the smallest available phone, confirm the HOST lobby scrolls to everything, the QR scans, and on the CODE tab the code field, SCAN QR and full keypad all fit.
+383. Log privacy: export logs after items 375 to 378. Confirm they hold only generic `qr_scan_*` events, with no code, payload or decoded text.

@@ -64,6 +64,13 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     private boolean pipPresentation = false;
     private int lastPipWidth = 0;
     private int lastPipHeight = 0;
+    private QrScanner qrScanner;
+    private TextView qrScannerHint;
+    private String qrTypedCode = "";
+    private boolean qrRejectionLogged = false;
+    private ImageView hostLobbyQr;
+    private String hostLobbyQrCode;
+    private ImageView hostWaitingQr;
     private EditText codeInput;
     private RadioGroup modes;
     private Button pttButton, listenButton, remoteCameraButton, remoteVideoButton, babyMicButton, chatButton;
@@ -194,6 +201,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         QuietLog.log("UI", "activity_resume",
                 "mode=" + activeMode + " fullscreen=" + (videoFullscreenActive ? 1 : 0));
         SessionBus.setListener(this);
+        syncPictureInPictureParams();
         UpdateManager.onResume(this);
         maybeShowSecurityPhrase();
         checkOnlineStatus(false);
@@ -229,6 +237,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     @Override protected void onPause() {
         QuietLog.log("UI", "activity_pause",
                 "pip=" + ((Build.VERSION.SDK_INT >= 26 && isInPictureInPictureMode()) ? 1 : 0));
+        cancelQrScanner();
         if (Build.VERSION.SDK_INT < 26 || !isInPictureInPictureMode()) {
             SessionBus.setListener(null);
         }
@@ -255,6 +264,10 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     }
 
     @Override public void onBackPressed() {
+        if (qrScanner != null) {
+            cancelQrScanner();
+            return;
+        }
         if (videoFullscreenActive && SessionBus.active
                 && (activeMode == SessionService.MODE_VIDEO
                     || activeMode == SessionService.MODE_BABY)) {
@@ -274,6 +287,13 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         super.onPictureInPictureModeChanged(inPictureInPictureMode, newConfig);
         pipPresentation = inPictureInPictureMode;
         if (inPictureInPictureMode) {
+            if (!pipVideoCallActive()) {
+                // Android can act on params set just before the call ended.
+                syncPictureInPictureParams();
+                QuietLog.log("UI", "pip_closed", "reason=no_video_call");
+                moveTaskToBack(true);
+                return;
+            }
             SessionBus.setListener(this);
             showPictureInPictureVideo();
         } else if (devDummySession) {
@@ -281,6 +301,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         } else if (SessionBus.active) {
             SessionBus.setListener(this);
             showSession(SessionBus.code, SessionBus.host);
+        } else if (renderedSession && !isFinishing()) {
+            showJoinLobby();
         }
     }
 
@@ -401,9 +423,12 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     }
 
     private void showHostLobby() {
+        stopQrScanner();
+        hostWaitingQr = null;
         releaseVideoSurfaces();
         resetBrightness();
         renderedSession = false;
+        syncPictureInPictureParams();
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -427,7 +452,13 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         code.setGravity(Gravity.CENTER);
         code.setPadding(0,dp(16),0,dp(16));
         code.setBackground(makeRound(panel2(),16));
-        root.addView(code, lp(-1,-2,0,0,0,20));
+        root.addView(code, lp(-1,-2,0,0,0,12));
+
+        hostLobbyQrCode = hostCode;
+        hostLobbyQr = addQrView(root, qrSizePx(200, 0.3f), 6);
+        TextView qrHint = text("On the other phone: CODE tab • SCAN QR", 12, muted(), false);
+        qrHint.setGravity(Gravity.CENTER);
+        root.addView(qrHint, lp(-1,-2,0,0,0,16));
 
         addRouteChooser(root, false);
 
@@ -446,6 +477,11 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         resetBrightness();
         if (devDummySession) stopDummySessionState();
         renderedSession = false;
+        stopQrScanner();
+        hostLobbyQr = null;
+        hostLobbyQrCode = null;
+        hostWaitingQr = null;
+        syncPictureInPictureParams();
 
         root = column();
         root.setBackgroundColor(bg());
@@ -566,7 +602,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     }
 
     private void renderCodeTab() {
-        joinContent.addView(text("Enter the 6-digit host code", 14, muted(), false), lp(-1,-2,2,0,2,8));
+        joinContent.addView(text("Enter the host code or scan its QR", 14, muted(), false), lp(-1,-2,2,0,2,8));
 
         codeInput = new EditText(this);
         codeInput.setTextColor(Color.WHITE);
@@ -582,7 +618,20 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         codeInput.setLongClickable(false);
         codeInput.setShowSoftInputOnFocus(false);
         codeInput.setBackground(makeRound(panel2(),14));
-        joinContent.addView(codeInput, lp(-1,dp(56),0,0,0,6));
+
+        // Shares the code field's row, because the keypad has no height to spare on small phones.
+        LinearLayout codeRow = row();
+        codeRow.addView(codeInput, new LinearLayout.LayoutParams(0,-1,1f));
+        Button scanQr = primary("SCAN QR");
+        scanQr.setTextSize(14);
+        scanQr.setMinWidth(0);
+        scanQr.setMinimumWidth(0);
+        scanQr.setPadding(dp(4),0,dp(4),0);
+        scanQr.setOnClickListener(v -> startQrScan());
+        LinearLayout.LayoutParams scanLp = new LinearLayout.LayoutParams(dp(96),-1);
+        scanLp.setMargins(dp(6),0,0,0);
+        codeRow.addView(scanQr, scanLp);
+        joinContent.addView(codeRow, lp(-1,dp(56),0,0,0,6));
 
         GridLayout keypad = new GridLayout(this);
         keypad.setColumnCount(3);
@@ -2562,6 +2611,135 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         }
     }
 
+    private void startQrScan() {
+        if (SessionBus.active || devDummySession || renderedSession) return;
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] {Manifest.permission.CAMERA}, 48);
+            return;
+        }
+        showQrScanner();
+    }
+
+    private void showQrScanner() {
+        if (isFinishing() || SessionBus.active || devDummySession || renderedSession
+                || qrScanner != null) {
+            return;
+        }
+        qrTypedCode = codeInput == null ? "" : codeInput.getText().toString();
+        qrRejectionLogged = false;
+
+        LinearLayout screen = column();
+        screen.setBackgroundColor(bg());
+        screen.setOnApplyWindowInsetsListener((view, insets) -> {
+            int topInset = Math.max(insets.getSystemWindowInsetTop(), insets.getStableInsetTop());
+            int bottomInset = Math.max(insets.getSystemWindowInsetBottom(), insets.getStableInsetBottom());
+            view.setPadding(dp(12), dp(8) + topInset, dp(12), dp(14) + bottomInset);
+            return insets;
+        });
+        screen.addView(text("SCAN HOST QR", 22, Color.WHITE, true), lp(-1,-2,0,0,0,4));
+        qrScannerHint = text("Point the camera at the QR on the host phone", 14, muted(), false);
+        screen.addView(qrScannerHint, lp(-1,-2,0,0,0,8));
+        TextureView preview = new TextureView(this);
+        screen.addView(preview, new LinearLayout.LayoutParams(-1,0,1f));
+        Button cancel = secondary("CANCEL");
+        cancel.setOnClickListener(v -> cancelQrScanner());
+        screen.addView(cancel, lp(-1,dp(54),0,8,0,0));
+        setContentView(screen);
+        screen.requestApplyInsets();
+
+        qrScanner = new QrScanner(this, preview, new QrScanner.Listener() {
+            @Override public void onQrText(QrScanner source, String text) {
+                handleQrText(source, text);
+            }
+            @Override public void onQrFailed(QrScanner source) {
+                if (source != qrScanner) return;
+                cancelQrScanner();
+                Toast.makeText(MainActivity.this,
+                        "Could not use the camera. Type the code instead.", Toast.LENGTH_LONG).show();
+            }
+        });
+        qrScanner.start();
+        QuietLog.log("UI", "qr_scan_open");
+    }
+
+    private void handleQrText(QrScanner source, String text) {
+        if (source != qrScanner) return;
+        QrPayload payload = QrPayload.parse(text);
+        if (payload == null) {
+            if (!qrRejectionLogged) {
+                qrRejectionLogged = true;
+                QuietLog.log("UI", "qr_scan_rejected");
+            }
+            if (qrScannerHint != null) qrScannerHint.setText("That is not a QuietLink host QR");
+            return;
+        }
+        QuietLog.log("UI", "qr_scan_accepted");
+        stopQrScanner();
+        if (SessionBus.active) {
+            showSession(SessionBus.code, SessionBus.host);
+            return;
+        }
+        // The host's QR carries its route, so the joiner cannot end up on the other one.
+        saveConnectionRoute(payload.route);
+        showJoinLobby();
+        restoreTypedCode(payload.code);
+        startRequested(false, payload.code, SessionService.MODE_VOICE);
+    }
+
+    private void cancelQrScanner() {
+        if (qrScanner == null) return;
+        String typed = qrTypedCode;
+        stopQrScanner();
+        showJoinLobby();
+        restoreTypedCode(typed);
+    }
+
+    private void stopQrScanner() {
+        QrScanner scanner = qrScanner;
+        qrScanner = null;
+        qrScannerHint = null;
+        qrTypedCode = "";
+        if (scanner != null) scanner.stop();
+    }
+
+    private void restoreTypedCode(String value) {
+        if (codeInput != null && selectedJoinTab == TAB_CODE) codeInput.setText(value);
+    }
+
+    private int qrSizePx(int maxDp, float screenHeightShare) {
+        android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+        int fitted = Math.min(metrics.widthPixels - dp(40),
+                (int) (metrics.heightPixels * screenHeightShare));
+        return Math.max(dp(120), Math.min(dp(maxDp), fitted));
+    }
+
+    private ImageView addQrView(LinearLayout parent, int sizePx, int bottomMarginDp) {
+        ImageView qr = new ImageView(this);
+        qr.setBackgroundColor(Color.WHITE);
+        qr.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        qr.setContentDescription("QR code for the host code");
+        LinearLayout.LayoutParams qrLp = lp(sizePx,sizePx,0,0,0,bottomMarginDp);
+        qrLp.gravity = Gravity.CENTER_HORIZONTAL;
+        parent.addView(qr, qrLp);
+        return qr;
+    }
+
+    // The QR carries the route, so this runs again whenever the route changes.
+    private boolean renderHostQr(ImageView view, String code) {
+        String payload = QrPayload.build(connectionRoutePreference(), code);
+        android.graphics.Bitmap bitmap = payload == null
+                ? null : QrCodeBitmap.encode(payload, view.getLayoutParams().width);
+        view.setImageBitmap(bitmap);
+        view.setVisibility(bitmap == null ? View.GONE : View.VISIBLE);
+        return bitmap != null;
+    }
+
+    private void updateHostWaitingQr() {
+        if (hostWaitingQr == null) return;
+        boolean waiting = !SessionBus.connected && !SessionBus.sessionEstablishedOnce;
+        hostWaitingQr.setVisibility(waiting ? View.VISIBLE : View.GONE);
+    }
+
     private void addMode(String name, String desc, int id, boolean checked) {
         RadioButton rb = new RadioButton(this); rb.setId(1000 + id); rb.setText(name + "\n" + desc); rb.setTextColor(Color.WHITE); rb.setTextSize(15);
         rb.setPadding(dp(4),dp(8),dp(4),dp(8)); rb.setButtonTintList(android.content.res.ColorStateList.valueOf(accent())); rb.setChecked(checked); modes.addView(rb);
@@ -2662,6 +2840,13 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             } else if (activeMode == SessionService.MODE_BABY) {
                 Toast.makeText(this, "Camera permission is needed if this phone becomes the Baby Station", Toast.LENGTH_LONG).show();
             }
+        } else if (requestCode == 48) {
+            if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                // Posted so the camera opens after the permission dialog has given the screen back.
+                new Handler(Looper.getMainLooper()).post(this::showQrScanner);
+            } else {
+                Toast.makeText(this, "Camera permission is needed to scan. You can still type the code.", Toast.LENGTH_LONG).show();
+            }
         }
     }
 
@@ -2672,6 +2857,10 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     }
 
     private void showSession(String code, boolean host) {
+        stopQrScanner();
+        hostLobbyQr = null;
+        hostLobbyQrCode = null;
+        hostWaitingQr = null;
         releaseVideoSurfaces();
         resetBrightness();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -2691,7 +2880,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         boolean sleepingParent = parent && sleepingBabyUi;
 
         boolean visualSession = activeMode != SessionService.MODE_VOICE;
-        configurePictureInPicture(visualSession);
+        syncPictureInPictureParams();
 
         root = column();
         root.setBackgroundColor(bg());
@@ -2765,6 +2954,10 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 mobileRouteButton.setVisibility(View.GONE);
                 mobileRouteButton.setOnClickListener(v -> restartOnMobileNetwork());
                 root.addView(mobileRouteButton, lp(-1,dp(42),0,0,0,6));
+                if (host && !visualSession && code != null && code.matches("\\d{6}")) {
+                    ImageView waitingQr = addQrView(root, qrSizePx(180, 0.3f), 6);
+                    if (renderHostQr(waitingQr, code)) hostWaitingQr = waitingQr;
+                }
                 updateDirectWifiAction(SessionBus.latestStatus);
             }
             verification = null;
@@ -4336,14 +4529,35 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         startService(i);
     }
 
-    private void configurePictureInPicture(boolean enabled) {
+    // The one rule for the popout. A call that dropped and is reconnecting still counts.
+    private boolean pipVideoCallActive() {
+        if (activeMode == SessionService.MODE_VOICE) return false;
+        return devDummySession || (SessionBus.active
+                && (SessionBus.connected || SessionBus.sessionEstablishedOnce));
+    }
+
+    // On Android 12+ the system enters the popout from these params on its own whenever
+    // the app leaves the foreground, so they must always match the state of the call.
+    private void syncPictureInPictureParams() {
         if (Build.VERSION.SDK_INT < 26) return;
+        applyPictureInPictureParams(lastPipWidth > 0 && lastPipHeight > 0
+                ? safePictureInPictureRatio(lastPipWidth, lastPipHeight)
+                : currentPictureInPictureRatio());
+    }
+
+    private void applyPictureInPictureParams(Rational ratio) {
         try {
             PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder()
-                    .setAspectRatio(currentPictureInPictureRatio());
-            if (Build.VERSION.SDK_INT >= 31) builder.setAutoEnterEnabled(enabled);
+                    .setAspectRatio(ratio);
+            if (Build.VERSION.SDK_INT >= 31) builder.setAutoEnterEnabled(pipVideoCallActive());
             setPictureInPictureParams(builder.build());
         } catch (Exception ignored) {}
+    }
+
+    private void closePictureInPictureIfNoVideoCall() {
+        if (Build.VERSION.SDK_INT < 26 || !isInPictureInPictureMode() || pipVideoCallActive()) return;
+        QuietLog.log("UI", "pip_closed", "reason=no_video_call");
+        moveTaskToBack(true);
     }
 
     private Rational currentPictureInPictureRatio() {
@@ -4371,23 +4585,17 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     }
 
     private void updatePictureInPictureAspect(android.graphics.Bitmap bitmap) {
-        if (Build.VERSION.SDK_INT < 26 || bitmap == null || activeMode == SessionService.MODE_VOICE) return;
+        if (Build.VERSION.SDK_INT < 26 || bitmap == null || !pipVideoCallActive()) return;
         int w = bitmap.getWidth();
         int h = bitmap.getHeight();
         if (w < 1 || h < 1 || (w == lastPipWidth && h == lastPipHeight)) return;
         lastPipWidth = w;
         lastPipHeight = h;
-        try {
-            PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder()
-                    .setAspectRatio(safePictureInPictureRatio(w, h));
-            if (Build.VERSION.SDK_INT >= 31) builder.setAutoEnterEnabled(true);
-            setPictureInPictureParams(builder.build());
-        } catch (Exception ignored) {}
+        applyPictureInPictureParams(safePictureInPictureRatio(w, h));
     }
 
     private void enterQuietLinkPictureInPicture() {
-        if (Build.VERSION.SDK_INT < 26 || (!devDummySession && (!SessionBus.connected || !SessionBus.active))) return;
-        if (activeMode == SessionService.MODE_VOICE || isInPictureInPictureMode()) return;
+        if (Build.VERSION.SDK_INT < 26 || !pipVideoCallActive() || isInPictureInPictureMode()) return;
 
         try {
             PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder()
@@ -4399,7 +4607,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     private void showPictureInPictureVideo() {
         releaseVideoSurfaces();
         pipPresentation = true;
-        configurePictureInPicture(true);
+        syncPictureInPictureParams();
         FrameLayout frame = new FrameLayout(this);
         frame.setBackgroundColor(Color.BLACK);
 
@@ -4668,19 +4876,14 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     }
 
     private void updateH264PictureInPictureAspect() {
-        if (Build.VERSION.SDK_INT < 26 || activeMode == SessionService.MODE_VOICE) return;
+        if (Build.VERSION.SDK_INT < 26 || !pipVideoCallActive()) return;
         int r = ((SessionBus.remoteVideoRotation % 360) + 360) % 360;
         int w = (r == 90 || r == 270) ? H264Codec.HEIGHT : H264Codec.WIDTH;
         int h = (r == 90 || r == 270) ? H264Codec.WIDTH : H264Codec.HEIGHT;
         if (w == lastPipWidth && h == lastPipHeight) return;
         lastPipWidth = w;
         lastPipHeight = h;
-        try {
-            PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder()
-                    .setAspectRatio(safePictureInPictureRatio(w, h));
-            if (Build.VERSION.SDK_INT >= 31) builder.setAutoEnterEnabled(true);
-            setPictureInPictureParams(builder.build());
-        } catch (Exception ignored) {}
+        applyPictureInPictureParams(safePictureInPictureRatio(w, h));
     }
 
     private void resetBrightness() {
@@ -4911,6 +5114,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     // Only the chooser is rebuilt, because rebuilding the host lobby would change its code.
     private void renderRouteChooser(LinearLayout chooser, boolean compact) {
         chooser.removeAllViews();
+        if (hostLobbyQr != null && hostLobbyQrCode != null) renderHostQr(hostLobbyQr, hostLobbyQrCode);
         boolean mobile = ConnectionRoute.isMobile(connectionRoutePreference());
 
         LinearLayout choices = row();
@@ -5006,6 +5210,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
     private void updateDirectWifiAction(String currentStatus) {
         updateMobileRouteAction();
+        updateHostWaitingQr();
         if (directWifiButton == null) return;
         boolean needsWifi = currentStatus != null
                 && currentStatus.contains("turn Wi-Fi radio on");
@@ -5085,6 +5290,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             } else if (changed && renderedSession && !pipPresentation) {
                 showSession(SessionBus.code, isHost);
             }
+            syncPictureInPictureParams();
+            closePictureInPictureIfNoVideoCall();
             if (newMode == SessionService.MODE_VIDEO && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 requestVideoCameraPermission();
             } else if (newMode == SessionService.MODE_BABY &&
@@ -5221,6 +5428,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 showSession(SessionBus.code, SessionBus.host);
             }
             updateMobileRouteAction();
+            updateHostWaitingQr();
+            syncPictureInPictureParams();
             maybeShowSecurityPhrase();
         });
     }
@@ -5564,6 +5773,11 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             if (outgoingDialog != null) { outgoingDialog.dismiss(); outgoingDialog = null; }
             if (chatDialog != null) { chatDialog.dismiss(); chatDialog = null; }
             videoFullscreenActive = false;
+            lastPipWidth = 0;
+            lastPipHeight = 0;
+            syncPictureInPictureParams();
+            closePictureInPictureIfNoVideoCall();
+            if (hostWaitingQr != null) hostWaitingQr.setVisibility(View.GONE);
             if (reason != null && reason.endsWith(" disconnected")
                     && !"Disconnected".equals(reason)) {
                 lastDisconnectBanner = reason;

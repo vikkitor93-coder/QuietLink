@@ -71,6 +71,15 @@ jobs:
             tools/ConnectionRouteSelfTest.java
           java -cp build/connection-route is.quietlink.app.ConnectionRouteSelfTest
 
+      - name: Run QR payload self-test
+        run: |
+          mkdir -p build/qr-payload
+          javac -d build/qr-payload \
+            app/src/main/java/is/quietlink/app/ConnectionRoute.java \
+            app/src/main/java/is/quietlink/app/QrPayload.java \
+            tools/QrPayloadSelfTest.java
+          java -cp build/qr-payload is.quietlink.app.QrPayloadSelfTest
+
       - name: Apply build version
         run: |
           source version.properties

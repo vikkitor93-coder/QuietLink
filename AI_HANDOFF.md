@@ -4,7 +4,7 @@ Updated: **2026-09-26**
 Repository: **vikkitor93-coder/QuietLink**  
 Source of truth: **main**  
 Android package: **is.quietlink.app**  
-Current release: **v0.3.65 / versionCode 77**  
+Current release: **v0.3.68 / versionCode 80**  
 Latest release CI: **passed**
 
 ---
@@ -200,6 +200,13 @@ The internet path needs protocol review before `onlineCallsAvailable` can be set
 
 # 6. Online P2P work completed
 
+
+## QR code join and popout rule (v0.3.68, NOT validated on devices)
+
+- **Popout:** `MainActivity.pipVideoCallActive()` is the one rule: non-voice mode, and an active session that is connected or was established once. Android 12+ enters the popout on its own from `setAutoEnterEnabled`, so `syncPictureInPictureParams()` re-applies the rule on resume, lobbies, session render, connect, mode change and disconnect.
+- **QR:** `QrPayload` holds the format `QL1:<route>:<6 digits>` with strict parsing and no Android imports, and `tools/QrPayloadSelfTest.java` runs in CI. `QrCodeBitmap` draws it, and `QrScanner` wraps Camera2 and ZXing core 3.5.3, the app's first outside library. The camera is requested only on SCAN QR and closes on success, cancel, back and `onPause`.
+- QL5, `Pairing`, `CryptoChannel`, `MediaTransport` and the manifest are unchanged. Scans log only generic `qr_*` events, never the code or decoded text.
+- Device checks: TESTING.md items 368 to 383.
 
 ## v0.3.65 — Quick App Test export + Wi-Fi Direct radio-off guidance
 
