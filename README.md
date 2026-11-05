@@ -1,4 +1,4 @@
-# QuietLink 0.3.66
+# QuietLink 0.3.67
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -13,9 +13,9 @@ The HOST lobby and the CODE tab offer a choice for each session. Both phones mus
 2. Wi-Fi Direct fallback starts after 8 seconds without an authenticated peer.
 3. QuietLink makes no internet contact for the session while connecting or during a healthy call.
 
-**MOBILE NETWORK:**
-1. QuietLink skips local search and Wi-Fi Direct and starts production rendezvous straight away, over cellular even when Wi-Fi is connected.
-2. If no cellular network is available it uses the current internet connection and says so in the status.
+**INTERNET:**
+1. QuietLink skips local search and Wi-Fi Direct and starts production rendezvous straight away.
+2. Each phone uses whichever internet connection it has, so one can be on Wi-Fi and the other on mobile data. Wi-Fi without internet access falls back to mobile data.
 3. Calls need the updated Pi rendezvous service, because control messages travel through its relay. Media is direct encrypted UDP with no media relay, so a carrier that blocks direct UDP leaves a connected call with no audio. The status says so.
 
 **Reconnect over mobile if Wi-Fi drops** (setting, on by default, for either option): after an established call is lost, QuietLink keeps searching nearby and also tries to reconnect over the internet. This is a reconnect with a brief interruption, not a seamless handoff. It contacts the QuietLink online service. When it is off, a lost call only reconnects nearby.
@@ -30,6 +30,12 @@ Local calling never depends on the online service. The permanent rendezvous can 
 - Media replay protection.
 - Human-readable verification phrase.
 - Encryption is mandatory.
+
+## 0.3.67 internet calls no longer need mobile data on both phones (not yet validated on devices)
+- **MOBILE NETWORK** is now **INTERNET**, and **RESTART ON MOBILE NETWORK** is now **RESTART ON INTERNET**. Both phones still pick this option.
+- Each phone uses its current internet connection instead of forcing mobile data, so a call can run between Wi-Fi and mobile data. A phone on working Wi-Fi can no longer be forced onto mobile data.
+- If a phone's connection drops during a call, internet reconnect picks up whatever connection is left.
+- Two phones on the same router may connect with no audio on this option, depending on the router. Use WI-FI DIRECT there.
 
 ## 0.3.66 connection choice and internet reconnect (not yet validated on devices)
 - New per-session **WI-FI DIRECT / MOBILE NETWORK** choice on the HOST lobby and CODE tab. The choice is remembered and defaults to WI-FI DIRECT.

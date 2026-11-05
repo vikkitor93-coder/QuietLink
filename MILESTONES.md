@@ -1,7 +1,7 @@
 # QuietLink milestones
 
 Updated: 2026-09-26  
-Current release: **v0.3.66**  
+Current release: **v0.3.67**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -188,13 +188,20 @@ See `ARCHITECTURE_ROADMAP.md` for entry/exit criteria and the no-big-bang-rewrit
 
 ## Current truth
 
-v0.3.66 is the active validation release and adds the connection choice and internet reconnect below, not yet validated on devices. v0.3.65 keeps Architecture Roadmap Phase 0 in place, makes Quick App Test reports persist/export cleanly, and improves the Wi-Fi Direct radio-off recovery UX. The uploaded evidence confirms same-WiFi LAN can win through the active room-probe path; the reported no-router Direct attempt had the host Wi-Fi radio disabled, so Phase 1 remains blocked on a clean three-phone baseline rather than treating that attempt as a connector regression.
+v0.3.67 is the active validation release. v0.3.66 added the connection choice and internet reconnect below, and v0.3.67 lets each phone use its own Wi-Fi or mobile data. Neither is validated on devices yet. v0.3.65 keeps Architecture Roadmap Phase 0 in place, makes Quick App Test reports persist/export cleanly, and improves the Wi-Fi Direct radio-off recovery UX. The uploaded evidence confirms same-WiFi LAN can win through the active room-probe path; the reported no-router Direct attempt had the host Wi-Fi radio disabled, so Phase 1 remains blocked on a clean three-phone baseline rather than treating that attempt as a connector regression.
 
 v0.3.48 production rendezvous matching is user-validated. v0.3.49 added the first encrypted internet session path and v0.3.50 fixed the older-phone updater signer false-positive. v0.3.51 adds a developer-only video rotation lab so the remaining cross-device orientation issue can be measured before selecting a new production formula. The permanent-Pi/internet Voice test remains queued immediately after the orientation checkpoint.
 
 The Online status dot remains conservative/red while `onlineCallsAvailable=false`, but the published status document now supplies the permanent production `rendezvousUrl` for automatic signaling.
 
 Local LAN / Hotspot / Wi-Fi Direct remains the working/default path and must continue working even if every online component is unavailable.
+
+## v0.3.67: internet calls between Wi-Fi and mobile data
+
+NOT validated on devices.
+
+- ⏳ MOBILE NETWORK renamed INTERNET. Each phone uses its validated default network, then cellular, for calls and reconnects.
+- ⏳ Two-phone test procedure: TESTING.md item 367.
 
 ## v0.3.66: connection choice and internet reconnect
 

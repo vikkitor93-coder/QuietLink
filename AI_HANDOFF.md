@@ -159,12 +159,12 @@ It authenticates the expected remembered peer before restoring a session.
 
 Internet recovery is an additional candidate beside local recovery (see Connection route below). Local recovery itself is unchanged.
 
-## Connection route (v0.3.66, NOT validated on devices)
+## Connection route (v0.3.67, NOT validated on devices)
 
 The route is chosen per session through `SessionService.EXTRA_ROUTE` and persisted in `quietlink_ui` as `connection_route`. A missing extra means local, which covers every restore path. `ConnectionRoute.java` holds the pure logic and `tools/ConnectionRouteSelfTest.java` tests it.
 
 - **WI-FI DIRECT (local):** LAN/hotspot, then the 8 s Wi-Fi Direct fallback. The rendezvous bootstrap no longer runs on this route, so a healthy session makes no internet contact. LanDiscovery and WifiDirectHelper are unchanged.
-- **MOBILE NETWORK:** `startMobileSession` skips local search and starts rendezvous at once. `MobileNetworkHolder` requests `TRANSPORT_CELLULAR` + `NET_CAPABILITY_INTERNET` with a bounded timeout. If no cellular network is available, the session uses the validated default network and says so.
+- **INTERNET (`ConnectionRoute.MOBILE` internally):** `startMobileSession` skips local search and starts rendezvous at once. It uses the validated default network, so one phone can be on Wi-Fi and the other on mobile data. With no validated default network, `MobileNetworkHolder` requests `TRANSPORT_CELLULAR` + `NET_CAPABILITY_INTERNET` with a bounded timeout.
 - **Binding:** sockets and connections are bound one by one with `Network.bindSocket` and `Network.openConnection`. `bindProcessToNetwork` is never used, so the updater cannot be pinned. The request and the network callback are released in `stopSession`, `closeTransientForServiceRestart` and `onDestroy`.
 
 ### Internet recovery
@@ -175,7 +175,7 @@ Setting: `allow_mobile_reconnect` in `quietlink_ui`, default ON. When it is OFF,
 - **Persistence:** the secret is stored with the recovery checkpoint in app-private prefs, under the existing `resumeAuthorizedForSession` gate. It must never be logged.
 - **Gate:** in-memory recovery after a loss only requires peer identity to be available, as it did before. `resumeAuthorizedForSession` only controls the checkpoint, the service-restart restore and the watchdog. It was not widened. A CODE call between newly met peers therefore recovers while the service lives, but not after process death unless Auto is enabled.
 - **Handshake:** each attempt uses a new UDP socket on the chosen network, a new STUN candidate and a new rendezvous registration. It then runs the same signed `handshakeNearby` and RECOVER/READY exchange over `RendezvousRelaySocket`, and requires `isExpectedRecoveryPeer`. `finalizeInternetRecovered` differs from `finalizeRecovered` only in using the peer's public candidate rather than its local UDP port.
-- **Network choice:** the local route uses the validated default network, then cellular. A Wi-Fi Direct group or a network without internet is never validated, so it is never picked. The mobile route uses cellular, then the validated default network.
+- **Network choice:** the local route uses the validated default network, then cellular. A Wi-Fi Direct group or a network without internet is never validated, so it is never picked. The internet route does the same.
 - **Independence:** attempts never touch `connecting`, the recovery listener or the local `udpSocket` until they succeed, so a failed attempt cannot block PeerDiscovery, LAN or Wi-Fi Direct recovery. Attempts are bounded (6) with backoff (2 to 30 s). A default network change resets the count.
 - **Flapping:** a default network change only sends a PING and declares loss if the peer stays silent for 7 s. A nearby peer gets 6 s of priority. A late local candidate cannot replace a relay session that heard the peer within 10 s. An old `controlLoop` blocked in a relay long poll can no longer end a newer session, because it now checks `crypto == loopChannel`.
 - **Wi-Fi Direct loss:** the default network callback does not see a Wi-Fi Direct group end, so that case still waits for the socket error or the 25 s heartbeat timeout.

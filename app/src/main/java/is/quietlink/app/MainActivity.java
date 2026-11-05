@@ -2569,7 +2569,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
     private void startRequested(boolean host, String code, int requestedMode) {
         // The chosen route decides the transport. WI-FI DIRECT stays on LAN, hotspot
-        // and Wi-Fi Direct. MOBILE NETWORK uses the production internet rendezvous
+        // and Wi-Fi Direct. INTERNET uses the production internet rendezvous
         // and relay path, and never requires a local Wi-Fi interface.
         boolean mobileRoute = ConnectionRoute.isMobile(connectionRoutePreference());
         QuietLog.log("UI", "code_session_start",
@@ -2760,7 +2760,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 directWifiButton.setVisibility(View.GONE);
                 directWifiButton.setOnClickListener(v -> openDirectWifiPanel());
                 root.addView(directWifiButton, lp(-1,dp(42),0,0,0,6));
-                mobileRouteButton = secondary("RESTART ON MOBILE NETWORK");
+                mobileRouteButton = secondary("RESTART ON INTERNET");
                 mobileRouteButton.setTextSize(11);
                 mobileRouteButton.setVisibility(View.GONE);
                 mobileRouteButton.setOnClickListener(v -> restartOnMobileNetwork());
@@ -4915,7 +4915,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
 
         LinearLayout choices = row();
         Button local = mobile ? secondary("WI-FI DIRECT") : primary("WI-FI DIRECT");
-        Button cellular = mobile ? primary("MOBILE NETWORK") : secondary("MOBILE NETWORK");
+        Button cellular = mobile ? primary("INTERNET") : secondary("INTERNET");
         local.setTextSize(12);
         cellular.setTextSize(12);
         local.setOnClickListener(v -> {
@@ -4931,7 +4931,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         chooser.addView(choices, lp(-1,dp(compact ? 40 : 48),0,0,0,4));
 
         chooser.addView(text(mobile
-                        ? "Both phones must pick the same option. Compare the security phrase when the call connects."
+                        ? "Both phones pick INTERNET. Each can be on Wi-Fi or mobile data. Compare the security phrase when the call connects."
                         : "Both phones must pick the same option.",
                 compact ? 11 : 12, muted(), false), lp(-1,-2,0,0,0,4));
 
@@ -4971,7 +4971,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         pendingRestartMode = SessionBus.sleepingBaby && activeMode == SessionService.MODE_BABY
                 ? SessionService.MODE_SLEEPING_BABY
                 : activeMode;
-        Toast.makeText(this, "The other phone must also choose MOBILE NETWORK", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "The other phone must also choose INTERNET", Toast.LENGTH_LONG).show();
         command(SessionService.ACTION_DISCONNECT, true);
     }
 

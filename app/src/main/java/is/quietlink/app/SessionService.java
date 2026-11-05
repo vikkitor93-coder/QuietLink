@@ -205,7 +205,6 @@ public final class SessionService extends Service {
     // and onDestroy.
     private volatile boolean sessionRouteMobile = false;
     private volatile Network sessionNetwork = null;
-    private volatile boolean sessionUsesCellular = false;
     private volatile boolean sessionNoPublicUdp = false;
     private volatile boolean peerMatchedWithoutCandidate = false;
     private volatile boolean serviceDestroyed = false;
@@ -828,7 +827,7 @@ public final class SessionService extends Service {
 
     private void startForegroundForMode() {
         Notification n = sessionNotification(sessionRouteMobile
-                ? "Starting mobile network connection…"
+                ? "Starting internet connection…"
                 : "Starting local connection…");
         if (Build.VERSION.SDK_INT >= 29) {
             int types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE | ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
@@ -882,9 +881,10 @@ public final class SessionService extends Service {
     }
 
     /**
-     * MOBILE NETWORK route. It skips LAN and Wi-Fi Direct and contacts the online
-     * service straight away, over cellular even when Wi-Fi is connected. Runs on
-     * an io thread because every step can block.
+     * INTERNET route. It skips LAN and Wi-Fi Direct and contacts the online service
+     * straight away, over whichever internet connection this phone has, so one
+     * phone can be on Wi-Fi and the other on mobile data. Runs on an io thread
+     * because every step can block.
      */
     private void startMobileSession() {
         final Object token = new Object();
@@ -915,7 +915,7 @@ public final class SessionService extends Service {
             QuietLog.log("ONLINE", "mobile_session_failed",
                     "reason=" + e.getClass().getSimpleName());
             if (mobileSessionPending(token)) {
-                SessionBus.status("Could not use the mobile network • disconnect and try again");
+                SessionBus.status("Could not connect to the internet • disconnect and try again");
             }
         }
     }
@@ -923,27 +923,28 @@ public final class SessionService extends Service {
     private Network acquireSessionNetwork(Object token) {
         for (int attempt = 0; attempt < MOBILE_NETWORK_TRIES; attempt++) {
             if (attempt > 0 && !waitWhileMobilePending(MOBILE_NETWORK_RETRY_MS, token)) return null;
-            if (attempt == 0) SessionBus.status("Connecting to mobile network…");
+            if (attempt == 0) SessionBus.status("Connecting to the internet…");
+
+            // Working Wi-Fi or mobile data as the phone's current connection. Wi-Fi
+            // without internet access is not validated, so it falls through to cellular.
+            Network current = MobileNetworkHolder.activeValidatedInternet(connectivity());
+            if (current != null) {
+                QuietLog.log("ONLINE", "mobile_network", "state="
+                        + (MobileNetworkHolder.isCellular(connectivity(), current)
+                        ? "cellular" : "current_internet"));
+                return current;
+            }
 
             MobileNetworkHolder holder = mobileNetworkHolder();
             Network cellular = holder == null ? null : holder.acquireCellular(MOBILE_NETWORK_WAIT_MS);
             if (!mobileSessionPending(token)) return null;
             if (cellular != null) {
-                sessionUsesCellular = true;
                 QuietLog.log("ONLINE", "mobile_network", "state=cellular");
                 return cellular;
             }
 
-            Network fallback = MobileNetworkHolder.activeValidatedInternet(connectivity());
-            if (fallback != null) {
-                sessionUsesCellular = false;
-                QuietLog.log("ONLINE", "mobile_network", "state=fallback_internet");
-                SessionBus.status("No mobile network • using current internet connection");
-                return fallback;
-            }
-
             QuietLog.log("ONLINE", "mobile_network", "state=unavailable");
-            SessionBus.status("No mobile network available • check mobile data");
+            SessionBus.status("No internet connection • check Wi-Fi or mobile data");
         }
         return null;
     }
@@ -973,9 +974,7 @@ public final class SessionService extends Service {
         if (sessionNoPublicUdp) {
             return "No public UDP address • direct media may not work";
         }
-        return sessionUsesCellular
-                ? "Waiting for the other phone on the mobile network…"
-                : "No mobile network • waiting for the other phone over the internet…";
+        return "Waiting for the other phone over the internet…";
     }
 
     private void handleMobileRendezvousStatus(String rendezvousStatus) {
@@ -2193,16 +2192,13 @@ public final class SessionService extends Service {
 
     private Network chooseRecoveryNetwork() {
         ConnectivityManager connectivity = connectivity();
-        MobileNetworkHolder holder = mobileNetworkHolder();
-        if (sessionRouteMobile) {
-            Network cellular = holder == null ? null : holder.acquireCellular(MOBILE_NETWORK_WAIT_MS);
-            return cellular != null ? cellular : MobileNetworkHolder.activeValidatedInternet(connectivity);
-        }
         // A phone still on working Wi-Fi uses it. A Wi-Fi Direct group or a network
         // without internet access never counts here, because it is not validated.
         Network active = MobileNetworkHolder.activeValidatedInternet(connectivity);
         if (active != null) return active;
-        return holder == null ? null : holder.acquireCellular(RECOVERY_CELLULAR_WAIT_MS);
+        MobileNetworkHolder holder = mobileNetworkHolder();
+        return holder == null ? null : holder.acquireCellular(
+                sessionRouteMobile ? MOBILE_NETWORK_WAIT_MS : RECOVERY_CELLULAR_WAIT_MS);
     }
 
     private String recoveryRendezvousUrl(Network network) {
@@ -2364,7 +2360,7 @@ public final class SessionService extends Service {
                 Network attemptNetwork = attempt.network;
                 boolean attemptNetworkGone = attemptNetwork != null
                         && MobileNetworkHolder.isGone(connectivity(), attemptNetwork);
-                boolean betterDefault = !sessionRouteMobile && current != null
+                boolean betterDefault = current != null
                         && attemptNetwork != null && !current.equals(attemptNetwork)
                         && !attempt.hasRelay();
                 if (attemptNetworkGone || betterDefault) {
