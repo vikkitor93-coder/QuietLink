@@ -1,5 +1,6 @@
 package is.quietlink.app;
 
+import android.net.Network;
 import android.util.Base64;
 
 import org.json.JSONArray;
@@ -20,6 +21,9 @@ public final class RendezvousClient implements AutoCloseable {
     private static final long REFRESH_MS = 15_000L;
     private static final long POLL_MS = 2_500L;
     private static final int MAX_RESPONSE_BYTES = 16 * 1024;
+
+    static final String STATUS_READY = "Online rendezvous ready";
+    static final String STATUS_UNAVAILABLE = "Online rendezvous unavailable";
 
     public interface Listener {
         void onPeerMatch(Match match);
@@ -44,24 +48,50 @@ public final class RendezvousClient implements AutoCloseable {
     private final boolean host;
     private final int protocolVersion;
     private final Listener listener;
+    private final Network network;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile String candidatesJson = "[]";
     private Thread worker;
 
     public RendezvousClient(String baseUrl, String sixDigitCode, boolean host,
                             int protocolVersion, Listener listener) throws Exception {
+        this(baseUrl, sixDigitCode, host, protocolVersion, listener, null);
+    }
+
+    RendezvousClient(String baseUrl, String sixDigitCode, boolean host,
+                     int protocolVersion, Listener listener, Network network) throws Exception {
+        this(baseUrl, roomForCode(sixDigitCode), host, protocolVersion, network, listener);
+    }
+
+    private RendezvousClient(String baseUrl, String roomToken, boolean host, int protocolVersion,
+                             Network network, Listener listener) {
         if (baseUrl == null || !baseUrl.startsWith("https://")) {
             throw new IllegalArgumentException("HTTPS rendezvous URL required");
         }
-        if (sixDigitCode == null || !sixDigitCode.matches("\\d{6}")) {
-            throw new IllegalArgumentException("Invalid pairing code");
-        }
         this.baseUrl = trimSlash(baseUrl);
-        this.roomToken = deriveRoomToken(sixDigitCode);
+        this.roomToken = roomToken;
         this.peerToken = randomToken();
         this.host = host;
         this.protocolVersion = protocolVersion;
         this.listener = listener;
+        this.network = network;
+    }
+
+    /** Joins a room derived from a recovery secret instead of the 6-digit code. */
+    static RendezvousClient forRecoveryRoom(String baseUrl, String recoveryRoom, boolean host,
+                                            int protocolVersion, Network network,
+                                            Listener listener) {
+        if (recoveryRoom == null || recoveryRoom.isEmpty()) {
+            throw new IllegalArgumentException("Missing recovery room");
+        }
+        return new RendezvousClient(baseUrl, recoveryRoom, host, protocolVersion, network, listener);
+    }
+
+    private static String roomForCode(String sixDigitCode) throws Exception {
+        if (sixDigitCode == null || !sixDigitCode.matches("\\d{6}")) {
+            throw new IllegalArgumentException("Invalid pairing code");
+        }
+        return deriveRoomToken(sixDigitCode);
     }
 
     public void setCandidates(JSONArray candidates) {
@@ -86,7 +116,7 @@ public final class RendezvousClient implements AutoCloseable {
             throw new IllegalArgumentException("Missing matched peer");
         }
         return new RendezvousRelaySocket(
-                baseUrl, roomToken, peerToken, match.peerToken, peerAddress);
+                baseUrl, roomToken, peerToken, match.peerToken, peerAddress, network);
     }
 
     private void runLoop() {
@@ -105,7 +135,7 @@ public final class RendezvousClient implements AutoCloseable {
             } catch (Exception e) {
                 QuietLog.log("ONLINE", "rendezvous_error",
                         "reason=" + e.getClass().getSimpleName());
-                if (listener != null) listener.onStatus("Online rendezvous unavailable • local search continues");
+                if (listener != null) listener.onStatus(STATUS_UNAVAILABLE);
             }
 
             try {
@@ -129,7 +159,7 @@ public final class RendezvousClient implements AutoCloseable {
 
         QuietLog.log("ONLINE", "rendezvous_register",
                 "role=" + (host ? "host" : "join"));
-        if (listener != null) listener.onStatus("Online rendezvous ready • waiting for peer candidates");
+        if (listener != null) listener.onStatus(STATUS_READY);
     }
 
     private Match poll() throws Exception {
@@ -160,7 +190,10 @@ public final class RendezvousClient implements AutoCloseable {
     private JSONObject request(String path, JSONObject body) throws Exception {
         HttpURLConnection connection = null;
         try {
-            connection = (HttpURLConnection) new URL(baseUrl + path).openConnection();
+            URL url = new URL(baseUrl + path);
+            connection = (HttpURLConnection) (network != null
+                    ? network.openConnection(url)
+                    : url.openConnection());
             connection.setConnectTimeout(3500);
             connection.setReadTimeout(3500);
             connection.setInstanceFollowRedirects(false);

@@ -190,6 +190,9 @@ public final class SessionBus {
     public static volatile String latestStatus = "Idle";
     public static volatile String verification = "";
     public static volatile boolean connected = false;
+    public static volatile boolean routeMobile = false;
+    public static volatile boolean sessionEstablishedOnce = false;
+    public static volatile boolean securityPhrasePending = false;
     public static volatile boolean active = false;
     public static volatile boolean host = false;
     public static volatile boolean babyStation = false;
@@ -521,6 +524,9 @@ public final class SessionBus {
     public static void disconnected(String reason) {
         connected = false;
         active = false;
+        routeMobile = false;
+        sessionEstablishedOnce = false;
+        securityPhrasePending = false;
         sleepingBaby = false;
         babyStation = false;
         babyMicEnabled = true;

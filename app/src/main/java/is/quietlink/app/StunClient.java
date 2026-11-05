@@ -1,5 +1,7 @@
 package is.quietlink.app;
 
+import android.net.Network;
+
 import org.json.JSONObject;
 
 import java.net.DatagramPacket;
@@ -43,6 +45,12 @@ public final class StunClient {
 
     public static Endpoint probe(DatagramSocket socket, String serverHost,
                                  int serverPort, int timeoutMs) throws Exception {
+        return probe(socket, serverHost, serverPort, timeoutMs, null);
+    }
+
+    /** With a network, the name lookup uses it too. The socket must already be bound to it. */
+    static Endpoint probe(DatagramSocket socket, String serverHost, int serverPort,
+                          int timeoutMs, Network network) throws Exception {
         if (socket == null || socket.isClosed()) throw new IllegalStateException("UDP socket unavailable");
         if (serverHost == null || serverHost.trim().isEmpty()) throw new IllegalArgumentException("Missing STUN host");
         if (serverPort < 1 || serverPort > 65535) throw new IllegalArgumentException("Bad STUN port");
@@ -56,7 +64,9 @@ public final class StunClient {
         request.putInt(MAGIC_COOKIE);
         request.put(tx);
 
-        InetAddress destination = InetAddress.getByName(serverHost);
+        InetAddress destination = network != null
+                ? network.getByName(serverHost)
+                : InetAddress.getByName(serverHost);
         DatagramPacket outbound = new DatagramPacket(
                 request.array(), request.array().length, destination, serverPort);
 

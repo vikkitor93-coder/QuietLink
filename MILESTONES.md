@@ -1,7 +1,7 @@
 # QuietLink milestones
 
 Updated: 2026-09-26  
-Current release: **v0.3.65**  
+Current release: **v0.3.66**  
 Source of truth: **GitHub main**
 
 ## Milestone guide
@@ -188,13 +188,23 @@ See `ARCHITECTURE_ROADMAP.md` for entry/exit criteria and the no-big-bang-rewrit
 
 ## Current truth
 
-v0.3.65 is the active validation release. It keeps Architecture Roadmap Phase 0 in place, makes Quick App Test reports persist/export cleanly, and improves the Wi-Fi Direct radio-off recovery UX. The uploaded evidence confirms same-WiFi LAN can win through the active room-probe path; the reported no-router Direct attempt had the host Wi-Fi radio disabled, so Phase 1 remains blocked on a clean three-phone baseline rather than treating that attempt as a connector regression.
+v0.3.66 is the active validation release and adds the connection choice and internet reconnect below, not yet validated on devices. v0.3.65 keeps Architecture Roadmap Phase 0 in place, makes Quick App Test reports persist/export cleanly, and improves the Wi-Fi Direct radio-off recovery UX. The uploaded evidence confirms same-WiFi LAN can win through the active room-probe path; the reported no-router Direct attempt had the host Wi-Fi radio disabled, so Phase 1 remains blocked on a clean three-phone baseline rather than treating that attempt as a connector regression.
 
 v0.3.48 production rendezvous matching is user-validated. v0.3.49 added the first encrypted internet session path and v0.3.50 fixed the older-phone updater signer false-positive. v0.3.51 adds a developer-only video rotation lab so the remaining cross-device orientation issue can be measured before selecting a new production formula. The permanent-Pi/internet Voice test remains queued immediately after the orientation checkpoint.
 
 The Online status dot remains conservative/red while `onlineCallsAvailable=false`, but the published status document now supplies the permanent production `rendezvousUrl` for automatic signaling.
 
 Local LAN / Hotspot / Wi-Fi Direct remains the working/default path and must continue working even if every online component is unavailable.
+
+## v0.3.66: connection choice and internet reconnect
+
+Released in v0.3.66 and NOT validated on devices. `onlineCallsAvailable` is unchanged.
+
+- ⏳ WI-FI DIRECT / MOBILE NETWORK choice on the HOST lobby and CODE tab, cellular binding, honest status text and a restart action on the waiting screen.
+- ⏳ Reconnect over the internet after a lost call, on by default. Local recovery still runs alongside it.
+- ⏳ Needs the Pi relay update before MOBILE NETWORK calls or internet recovery can work.
+- ⏳ Two-phone test procedure: TESTING.md items 352 onward.
+- Not built: encrypted media relay, ConnectionRouter refactor, QL5 or MediaTransport framing changes.
 
 ## Milestone display rule
 

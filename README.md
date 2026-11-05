@@ -1,4 +1,4 @@
-# QuietLink 0.3.65
+# QuietLink 0.3.66
 
 > **AI / project continuation:** read [AI_HANDOFF.md](AI_HANDOFF.md) first, then [MILESTONES.md](MILESTONES.md) and [TESTING.md](TESTING.md). The handoff file contains the current architecture, constraints, release process, unresolved issues, and exact NEXT ACTION.
 
@@ -6,10 +6,21 @@
 Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleeping Baby modes.
 
 ## Connection order
+The HOST lobby and the CODE tab offer a choice for each session. Both phones must pick the same option. WI-FI DIRECT is the default.
+
+**WI-FI DIRECT (local):**
 1. Same router / LAN starts immediately using Android NSD.
-2. After a short 1.5-second local head start, CODE host/join automatically starts production rendezvous signaling in parallel when the published endpoint is available.
-3. Wi-Fi Direct fallback starts after 8 seconds without an authenticated peer.
-4. Local calling never depends on the online service. The permanent rendezvous can fail without breaking LAN/Hotspot/Wi-Fi Direct. Direct internet session establishment remains under milestone-7 validation.
+2. Wi-Fi Direct fallback starts after 8 seconds without an authenticated peer.
+3. QuietLink makes no internet contact for the session while connecting or during a healthy call.
+
+**MOBILE NETWORK:**
+1. QuietLink skips local search and Wi-Fi Direct and starts production rendezvous straight away, over cellular even when Wi-Fi is connected.
+2. If no cellular network is available it uses the current internet connection and says so in the status.
+3. Calls need the updated Pi rendezvous service, because control messages travel through its relay. Media is direct encrypted UDP with no media relay, so a carrier that blocks direct UDP leaves a connected call with no audio. The status says so.
+
+**Reconnect over mobile if Wi-Fi drops** (setting, on by default, for either option): after an established call is lost, QuietLink keeps searching nearby and also tries to reconnect over the internet. This is a reconnect with a brief interruption, not a seamless handoff. It contacts the QuietLink online service. When it is off, a lost call only reconnects nearby.
+
+Local calling never depends on the online service. The permanent rendezvous can fail without breaking LAN/Hotspot/Wi-Fi Direct.
 
 ## Security
 - Ephemeral P-256 ECDH every session.
@@ -19,6 +30,15 @@ Native Android local-first encrypted P2P voice/video with Baby Monitor and Sleep
 - Media replay protection.
 - Human-readable verification phrase.
 - Encryption is mandatory.
+
+## 0.3.66 connection choice and internet reconnect (not yet validated on devices)
+- New per-session **WI-FI DIRECT / MOBILE NETWORK** choice on the HOST lobby and CODE tab. The choice is remembered and defaults to WI-FI DIRECT.
+- **Behaviour change:** WI-FI DIRECT no longer starts the automatic background internet attempt. A phone that relied on that attempt must now pick MOBILE NETWORK.
+- The waiting screen offers **RESTART ON MOBILE NETWORK**, which restarts the same code on the mobile network.
+- New setting **RECONNECT OVER MOBILE IF WI-FI DROPS**, on by default. After a lost call, phones also try to reconnect through a private recovery room agreed over the encrypted call. Nearby recovery keeps running.
+- MOBILE NETWORK calls show the security phrase when they connect. Compare it on both phones.
+- Status text now separates no mobile network, online service unreachable, waiting for the other phone, no public UDP address, relay unavailable and connected with no incoming audio.
+- Limits: there is no media relay, so carrier NAT that blocks direct UDP cannot be recovered. Internet calls and internet recovery need the updated Pi service.
 
 ## 0.3.46 signing-key migration bridge
 - This is a **bridge release** for the Android signing-key security migration.

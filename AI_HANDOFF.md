@@ -157,7 +157,44 @@ Existing self-healing recovery is currently oriented around local discovery.
 
 It authenticates the expected remembered peer before restoring a session.
 
-Internet-path recovery still needs to become transport-independent.
+Internet recovery is an additional candidate beside local recovery (see Connection route below). Local recovery itself is unchanged.
+
+## Connection route (v0.3.66, NOT validated on devices)
+
+The route is chosen per session through `SessionService.EXTRA_ROUTE` and persisted in `quietlink_ui` as `connection_route`. A missing extra means local, which covers every restore path. `ConnectionRoute.java` holds the pure logic and `tools/ConnectionRouteSelfTest.java` tests it.
+
+- **WI-FI DIRECT (local):** LAN/hotspot, then the 8 s Wi-Fi Direct fallback. The rendezvous bootstrap no longer runs on this route, so a healthy session makes no internet contact. LanDiscovery and WifiDirectHelper are unchanged.
+- **MOBILE NETWORK:** `startMobileSession` skips local search and starts rendezvous at once. `MobileNetworkHolder` requests `TRANSPORT_CELLULAR` + `NET_CAPABILITY_INTERNET` with a bounded timeout. If no cellular network is available, the session uses the validated default network and says so.
+- **Binding:** sockets and connections are bound one by one with `Network.bindSocket` and `Network.openConnection`. `bindProcessToNetwork` is never used, so the updater cannot be pinned. The request and the network callback are released in `stopSession`, `closeTransientForServiceRestart` and `onDestroy`.
+
+### Internet recovery
+
+Setting: `allow_mobile_reconnect` in `quietlink_ui`, default ON. When it is OFF, recovery behaves as it did before this feature.
+
+- **Recovery room:** after activation, the peer with the lower identity fingerprint generates 32 random bytes and sends `RECOVERY_ROOM_V1:` over the authenticated control channel. The other peer answers `RECOVERY_ROOM_ACK_V1`. Older peers ignore both as unknown messages, so no capability name was added. No ack means no internet recovery, with a generic log line. The relay only sees a SHA-256 derived room name. The six-digit code is never reused.
+- **Persistence:** the secret is stored with the recovery checkpoint in app-private prefs, under the existing `resumeAuthorizedForSession` gate. It must never be logged.
+- **Gate:** in-memory recovery after a loss only requires peer identity to be available, as it did before. `resumeAuthorizedForSession` only controls the checkpoint, the service-restart restore and the watchdog. It was not widened. A CODE call between newly met peers therefore recovers while the service lives, but not after process death unless Auto is enabled.
+- **Handshake:** each attempt uses a new UDP socket on the chosen network, a new STUN candidate and a new rendezvous registration. It then runs the same signed `handshakeNearby` and RECOVER/READY exchange over `RendezvousRelaySocket`, and requires `isExpectedRecoveryPeer`. `finalizeInternetRecovered` differs from `finalizeRecovered` only in using the peer's public candidate rather than its local UDP port.
+- **Network choice:** the local route uses the validated default network, then cellular. A Wi-Fi Direct group or a network without internet is never validated, so it is never picked. The mobile route uses cellular, then the validated default network.
+- **Independence:** attempts never touch `connecting`, the recovery listener or the local `udpSocket` until they succeed, so a failed attempt cannot block PeerDiscovery, LAN or Wi-Fi Direct recovery. Attempts are bounded (6) with backoff (2 to 30 s). A default network change resets the count.
+- **Flapping:** a default network change only sends a PING and declares loss if the peer stays silent for 7 s. A nearby peer gets 6 s of priority. A late local candidate cannot replace a relay session that heard the peer within 10 s. An old `controlLoop` blocked in a relay long poll can no longer end a newer session, because it now checks `crypto == loopChannel`.
+- **Wi-Fi Direct loss:** the default network callback does not see a Wi-Fi Direct group end, so that case still waits for the socket error or the 25 s heartbeat timeout.
+- **Manual disconnect:** cancels attempts, and relay sessions wait longer so the peer can collect BYE_MANUAL before the room is left.
+
+### Pi dependency
+
+When this was written, the live Pi `/health` reported `build: pi-python-test`. `/v1/relay-poll` and `/v1/relay-ack` returned 404 and `/v1/relay-send` and `/v1/poll` returned 501. MOBILE NETWORK calls and internet recovery both need `rendezvous/pi/server.py` deployed. Until then the status shows "the QuietLink server needs updating".
+
+### Known limits
+
+- There is no media relay, so carrier or symmetric NAT that blocks direct UDP gives a connected call with no audio. The status reports this after 12 s.
+- A phone that returns to Wi-Fi stays on the relay path until that path is lost.
+- If one phone's link is already down at manual disconnect, BYE_MANUAL cannot arrive, so the other phone keeps recovering until its bounds run out or its user disconnects.
+- A local and a relay finalize can race. The heartbeat heals this with a brief interruption.
+
+### Security review
+
+The internet path needs protocol review before `onlineCallsAvailable` can be set true. See the maintainer's private notes.
 
 ---
 
@@ -1040,6 +1077,9 @@ Start with these when resuming:
 - `app/src/main/java/is/quietlink/app/PeerDiscovery.java` — local peer discovery
 - `app/src/main/java/is/quietlink/app/RendezvousClient.java` — internet rendezvous signaling
 - `app/src/main/java/is/quietlink/app/OnlineStatus.java` — online status/gating
+- `app/src/main/java/is/quietlink/app/ConnectionRoute.java` — pure route, recovery room and backoff logic
+- `app/src/main/java/is/quietlink/app/MobileNetworkHolder.java` — scoped cellular network request
+- `app/src/main/java/is/quietlink/app/RelayUnavailableException.java` — generic "server out of date" relay failure
 - `app/src/main/java/is/quietlink/app/KnownDeviceStore.java`
 - `app/src/main/java/is/quietlink/app/DeviceIdentity.java`
 - `app/src/main/java/is/quietlink/app/MainActivity.java` — lobby/status UI and call UI

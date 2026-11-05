@@ -1,5 +1,7 @@
 package is.quietlink.app;
 
+import android.net.Network;
+
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -44,16 +46,20 @@ public final class OnlineStatus {
 
     public static void check(Callback callback) {
         new Thread(() -> {
-            Result result = probe();
+            Result result = probe(null);
             if (callback != null) callback.onResult(result);
         }, "QuietLink-OnlineStatus").start();
     }
 
-    private static Result probe() {
+    /** Blocking probe. A non-null network carries the request instead of the default one. */
+    static Result probe(Network network) {
         HttpURLConnection connection = null;
         long checkedAt = System.currentTimeMillis();
         try {
-            connection = (HttpURLConnection) new URL(STATUS_URL).openConnection();
+            URL url = new URL(STATUS_URL);
+            connection = (HttpURLConnection) (network != null
+                    ? network.openConnection(url)
+                    : url.openConnection());
             connection.setConnectTimeout(3500);
             connection.setReadTimeout(3500);
             connection.setInstanceFollowRedirects(false);

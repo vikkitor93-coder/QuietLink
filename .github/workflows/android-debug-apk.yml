@@ -63,6 +63,14 @@ jobs:
             tools/DevQuickTestSelfTest.java
           java -cp build/dev-quick-test is.quietlink.app.DevQuickTestSelfTest
 
+      - name: Run connection route self-test
+        run: |
+          mkdir -p build/connection-route
+          javac -d build/connection-route \
+            app/src/main/java/is/quietlink/app/ConnectionRoute.java \
+            tools/ConnectionRouteSelfTest.java
+          java -cp build/connection-route is.quietlink.app.ConnectionRouteSelfTest
+
       - name: Apply build version
         run: |
           source version.properties
