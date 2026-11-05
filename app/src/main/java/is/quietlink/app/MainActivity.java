@@ -35,6 +35,11 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     private LinearLayout joinContent;
     private TextView status, verification, levelText;
     private Button directWifiButton;
+    private Button mobileRouteButton;
+    private boolean pendingMobileRestart = false;
+    private boolean pendingRestartHost = false;
+    private String pendingRestartCode;
+    private int pendingRestartMode;
     private ImageView remoteVideo;
     private ImageView localPreview;
     private TextureView remoteVideoTexture;
@@ -190,6 +195,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 "mode=" + activeMode + " fullscreen=" + (videoFullscreenActive ? 1 : 0));
         SessionBus.setListener(this);
         UpdateManager.onResume(this);
+        maybeShowSecurityPhrase();
         checkOnlineStatus(false);
         wifiWarningDismissedThisForeground = false;
         if (!devDummySession && SessionBus.active && activeMode != SessionService.MODE_VOICE) {
@@ -423,6 +429,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         code.setBackground(makeRound(panel2(),16));
         root.addView(code, lp(-1,-2,0,0,0,20));
 
+        addRouteChooser(root, false);
+
         Button start = primary("START HOSTING");
         start.setTextSize(18);
         start.setOnClickListener(v -> startRequested(true, hostCode, SessionService.MODE_VOICE));
@@ -601,6 +609,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
             keypad.addView(keyButton,kp);
         }
         joinContent.addView(keypad, new LinearLayout.LayoutParams(-1,0,1f));
+
+        addRouteChooser(joinContent, true);
 
         LinearLayout actions = row();
 
@@ -2558,19 +2568,20 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     }
 
     private void startRequested(boolean host, String code, int requestedMode) {
-        // CODE is transport-agnostic. It may use LAN/hotspot first, then the
-        // production internet rendezvous/relay path. Never require a local
-        // Wi-Fi interface just to begin a CODE session.
+        // The chosen route decides the transport. WI-FI DIRECT stays on LAN, hotspot
+        // and Wi-Fi Direct. MOBILE NETWORK uses the production internet rendezvous
+        // and relay path, and never requires a local Wi-Fi interface.
+        boolean mobileRoute = ConnectionRoute.isMobile(connectionRoutePreference());
         QuietLog.log("UI", "code_session_start",
                 "local_network=" + (hasUsableLocalNetwork() ? 1 : 0)
-                        + " internet_allowed=1");
+                        + " route=" + (mobileRoute ? ConnectionRoute.MOBILE : ConnectionRoute.LOCAL));
         pendingHost = host; pendingCode = code; pendingMode = requestedMode;
         List<String> missing = missingPermissions(requestedMode, host);
 
         // Wi-Fi Direct is an optional CODE transport, not a prerequisite for
         // internet calling. Ask for its runtime permission when Wi-Fi is on,
         // but the request result never blocks CODE from starting if denied.
-        String optionalP2p = optionalWifiDirectPermission();
+        String optionalP2p = mobileRoute ? null : optionalWifiDirectPermission();
         if (optionalP2p != null && !missing.contains(optionalP2p)) {
             missing.add(optionalP2p);
         }
@@ -2591,6 +2602,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         showSession(code, host);
         Intent i = new Intent(this, SessionService.class).setAction(host ? SessionService.ACTION_HOST : SessionService.ACTION_JOIN);
         i.putExtra(SessionService.EXTRA_CODE, code).putExtra(SessionService.EXTRA_MODE, requestedMode);
+        i.putExtra(SessionService.EXTRA_ROUTE, connectionRoutePreference());
         startForegroundService(i);
     }
 
@@ -2671,6 +2683,7 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
         babyStateText = null;
         babyOwnStateText = null;
         directWifiButton = null;
+        mobileRouteButton = null;
         sleepingBabyUi = SessionBus.sleepingBaby;
 
         boolean parent = !activeBabyStation && activeMode == SessionService.MODE_BABY;
@@ -2747,6 +2760,11 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 directWifiButton.setVisibility(View.GONE);
                 directWifiButton.setOnClickListener(v -> openDirectWifiPanel());
                 root.addView(directWifiButton, lp(-1,dp(42),0,0,0,6));
+                mobileRouteButton = secondary("RESTART ON MOBILE NETWORK");
+                mobileRouteButton.setTextSize(11);
+                mobileRouteButton.setVisibility(View.GONE);
+                mobileRouteButton.setOnClickListener(v -> restartOnMobileNetwork());
+                root.addView(mobileRouteButton, lp(-1,dp(42),0,0,0,6));
                 updateDirectWifiAction(SessionBus.latestStatus);
             }
             verification = null;
@@ -4873,7 +4891,121 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
     private String randomCode() { return String.format("%06d", new SecureRandom().nextInt(1_000_000)); }
     private String formatCode(String c) { return c != null && c.length() == 6 ? c.substring(0,3) + " " + c.substring(3) : c; }
 
+    private String connectionRoutePreference() {
+        return ConnectionRoute.normalize(getSharedPreferences(ConnectionRoute.PREFS, MODE_PRIVATE)
+                .getString(ConnectionRoute.PREF_ROUTE, ConnectionRoute.LOCAL));
+    }
+
+    private void saveConnectionRoute(String route) {
+        getSharedPreferences(ConnectionRoute.PREFS, MODE_PRIVATE).edit()
+                .putString(ConnectionRoute.PREF_ROUTE, ConnectionRoute.normalize(route))
+                .apply();
+    }
+
+    private void addRouteChooser(LinearLayout parent, boolean compact) {
+        LinearLayout chooser = column();
+        parent.addView(chooser, lp(-1,-2,0,compact ? 4 : 0,0,compact ? 4 : 16));
+        renderRouteChooser(chooser, compact);
+    }
+
+    // Only the chooser is rebuilt, because rebuilding the host lobby would change its code.
+    private void renderRouteChooser(LinearLayout chooser, boolean compact) {
+        chooser.removeAllViews();
+        boolean mobile = ConnectionRoute.isMobile(connectionRoutePreference());
+
+        LinearLayout choices = row();
+        Button local = mobile ? secondary("WI-FI DIRECT") : primary("WI-FI DIRECT");
+        Button cellular = mobile ? primary("MOBILE NETWORK") : secondary("MOBILE NETWORK");
+        local.setTextSize(12);
+        cellular.setTextSize(12);
+        local.setOnClickListener(v -> {
+            saveConnectionRoute(ConnectionRoute.LOCAL);
+            renderRouteChooser(chooser, compact);
+        });
+        cellular.setOnClickListener(v -> {
+            saveConnectionRoute(ConnectionRoute.MOBILE);
+            renderRouteChooser(chooser, compact);
+        });
+        choices.addView(local, weightLp());
+        choices.addView(cellular, weightLp());
+        chooser.addView(choices, lp(-1,dp(compact ? 40 : 48),0,0,0,4));
+
+        chooser.addView(text(mobile
+                        ? "Both phones must pick the same option. Compare the security phrase when the call connects."
+                        : "Both phones must pick the same option.",
+                compact ? 11 : 12, muted(), false), lp(-1,-2,0,0,0,4));
+
+        boolean allowed = getSharedPreferences(ConnectionRoute.PREFS, MODE_PRIVATE).getBoolean(
+                ConnectionRoute.PREF_ALLOW_MOBILE_RECONNECT,
+                ConnectionRoute.DEFAULT_ALLOW_MOBILE_RECONNECT);
+        Button reconnect = secondary((compact
+                ? "IF WI-FI DROPS, RECONNECT VIA ONLINE SERVICE: "
+                : "RECONNECT OVER MOBILE IF WI-FI DROPS: ") + (allowed ? "ON" : "OFF"));
+        reconnect.setTextSize(compact ? 10 : 11);
+        reconnect.setOnClickListener(v -> {
+            getSharedPreferences(ConnectionRoute.PREFS, MODE_PRIVATE).edit()
+                    .putBoolean(ConnectionRoute.PREF_ALLOW_MOBILE_RECONNECT, !allowed)
+                    .apply();
+            renderRouteChooser(chooser, compact);
+        });
+        chooser.addView(reconnect, lp(-1,dp(compact ? 34 : 42),0,0,0,compact ? 0 : 4));
+        if (compact) return;
+        chooser.addView(text(allowed
+                        ? "A lost call may reconnect with a brief interruption. This contacts the QuietLink online service."
+                        : "A lost call only reconnects nearby. The online service is not contacted.",
+                11, muted(), false));
+    }
+
+    // Reuses the normal disconnect and launch paths. Disconnecting first means the
+    // service cannot still own the old session when the new one starts.
+    private void restartOnMobileNetwork() {
+        String currentCode = SessionBus.code;
+        if (currentCode == null || !currentCode.matches("\\d{6}")
+                || !SessionBus.active || SessionBus.connected) {
+            return;
+        }
+        saveConnectionRoute(ConnectionRoute.MOBILE);
+        pendingMobileRestart = true;
+        pendingRestartHost = activeHost;
+        pendingRestartCode = currentCode;
+        pendingRestartMode = SessionBus.sleepingBaby && activeMode == SessionService.MODE_BABY
+                ? SessionService.MODE_SLEEPING_BABY
+                : activeMode;
+        Toast.makeText(this, "The other phone must also choose MOBILE NETWORK", Toast.LENGTH_LONG).show();
+        command(SessionService.ACTION_DISCONNECT, true);
+    }
+
+    // The relay and Cloudflare can see the room token, so on this route the phrase is
+    // the real defence against interception. It only helps if people compare it.
+    private void maybeShowSecurityPhrase() {
+        if (!SessionBus.securityPhrasePending || !SessionBus.connected || isFinishing()) return;
+        String phrase = SessionBus.verification;
+        if (phrase == null || phrase.isEmpty()) return;
+        SessionBus.securityPhrasePending = false;
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Compare security phrase")
+                .setMessage("Both phones should show the same phrase:\n\n" + phrase
+                        + "\n\nIf the phrases differ, someone may be intercepting this call. Disconnect.")
+                .setPositiveButton("THEY MATCH", null)
+                .setNegativeButton("DISCONNECT", (dialog, which) ->
+                        command(SessionService.ACTION_DISCONNECT, true))
+                .show();
+    }
+
+    private void updateMobileRouteAction() {
+        if (mobileRouteButton == null) return;
+        String currentCode = SessionBus.code;
+        boolean waitingLocally = SessionBus.active
+                && !SessionBus.connected
+                && !SessionBus.routeMobile
+                && !SessionBus.sessionEstablishedOnce
+                && currentCode != null
+                && currentCode.matches("\\d{6}");
+        mobileRouteButton.setVisibility(waitingLocally ? View.VISIBLE : View.GONE);
+    }
+
     private void updateDirectWifiAction(String currentStatus) {
+        updateMobileRouteAction();
         if (directWifiButton == null) return;
         boolean needsWifi = currentStatus != null
                 && currentStatus.contains("turn Wi-Fi radio on");
@@ -5088,6 +5220,8 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 applySavedVideoProfile(false);
                 showSession(SessionBus.code, SessionBus.host);
             }
+            updateMobileRouteAction();
+            maybeShowSecurityPhrase();
         });
     }
 
@@ -5435,6 +5569,20 @@ public final class MainActivity extends Activity implements SessionBus.Listener 
                 lastDisconnectBanner = reason;
             } else {
                 lastDisconnectBanner = null;
+            }
+            if (pendingMobileRestart) {
+                pendingMobileRestart = false;
+                boolean restartHost = pendingRestartHost;
+                String restartCode = pendingRestartCode;
+                int restartMode = pendingRestartMode;
+                pendingRestartCode = null;
+                lastDisconnectBanner = null;
+                // The service is still shutting down, so the new session starts a moment later.
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    if (isFinishing() || SessionBus.active) return;
+                    launchSession(restartHost, restartCode, restartMode);
+                }, 600L);
+                return;
             }
             if (!isFinishing()) showJoinLobby();
         });

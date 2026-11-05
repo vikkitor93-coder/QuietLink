@@ -3,7 +3,7 @@ name: Build QuietLink signed APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main, h264-720p30-v0314 ]
+    branches: [ main, h264-720p30-v0314, test-mobile-network ]
 
 permissions:
   contents: read
@@ -62,6 +62,14 @@ jobs:
             app/src/main/java/is/quietlink/app/DevQuickTest.java \
             tools/DevQuickTestSelfTest.java
           java -cp build/dev-quick-test is.quietlink.app.DevQuickTestSelfTest
+
+      - name: Run connection route self-test
+        run: |
+          mkdir -p build/connection-route
+          javac -d build/connection-route \
+            app/src/main/java/is/quietlink/app/ConnectionRoute.java \
+            tools/ConnectionRouteSelfTest.java
+          java -cp build/connection-route is.quietlink.app.ConnectionRouteSelfTest
 
       - name: Apply build version
         run: |

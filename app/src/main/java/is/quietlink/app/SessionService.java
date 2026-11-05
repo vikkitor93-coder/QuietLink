@@ -73,6 +73,7 @@ public final class SessionService extends Service {
     public static final String EXTRA_PEER_FINGERPRINT = "peer_fingerprint";
     public static final String EXTRA_PEER_NAME = "peer_name";
     public static final String EXTRA_CHAT_TEXT = "chat_text";
+    public static final String EXTRA_ROUTE = "route";
 
     public static final int MODE_VOICE = 0;
     public static final int MODE_VIDEO = 1;
@@ -97,6 +98,24 @@ public final class SessionService extends Service {
     private static final int CHAT_FILE_CHUNK_BYTES = 4096;
     private static final int CHAT_FILE_MAX_BYTES = 900 * 1024;
     private static final int CHAT_FILE_WIRE_MAX_BYTES = 940 * 1024;
+    private static final int MOBILE_NETWORK_TRIES = 12;
+    private static final long MOBILE_NETWORK_WAIT_MS = 10_000L;
+    private static final long MOBILE_NETWORK_RETRY_MS = 5_000L;
+    private static final int ONLINE_SERVICE_TRIES = 12;
+    private static final long ONLINE_SERVICE_RETRY_MS = 10_000L;
+    private static final long NO_INCOMING_MEDIA_CHECK_MS = 12_000L;
+    private static final long RECOVERY_CELLULAR_WAIT_MS = 8_000L;
+    // Longer than the peer's 25 s heartbeat timeout, so a phone that is slow to
+    // notice the loss still has time to reach the recovery room.
+    private static final long INTERNET_RECOVERY_MATCH_WAIT_MS = 40_000L;
+    private static final long INTERNET_RECOVERY_HANDSHAKE_MS = 15_000L;
+    private static final long LOCAL_RECOVERY_PRIORITY_MS = 6_000L;
+    // Longer than the 5 s heartbeat, so a healthy peer always answers in time.
+    private static final long NETWORK_CHANGE_LIVENESS_MS = 7_000L;
+    private static final long LIVE_RELAY_GUARD_MS = 10_000L;
+    private static final long RELAY_BYE_DRAIN_MS = 600L;
+    private static final long RELAY_RETRY_PAUSE_MS = 3_000L;
+    private static final long RELAY_UNAVAILABLE_PAUSE_MS = 15_000L;
 
     private final ExecutorService io = Executors.newCachedThreadPool();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -109,8 +128,8 @@ public final class SessionService extends Service {
 
     private ServerSocket serverSocket;
     private ServerSocket pairingServerSocket;
-    private DatagramSocket udpSocket;
-    private CryptoChannel crypto;
+    private volatile DatagramSocket udpSocket;
+    private volatile CryptoChannel crypto;
     private MediaTransport media;
     private AudioEngine audio;
     private VideoEngine video;
@@ -180,6 +199,38 @@ public final class SessionService extends Service {
     private WifiManager.WifiLock babyWifiLock;
     private IncomingTextFile incomingTextFile;
 
+    // Connection route for this session. Sockets are bound one by one and the
+    // process is never bound, so the updater stays on the default network. All of
+    // this is released on every exit path: stopSession, closeTransientForServiceRestart
+    // and onDestroy.
+    private volatile boolean sessionRouteMobile = false;
+    private volatile Network sessionNetwork = null;
+    private volatile boolean sessionUsesCellular = false;
+    private volatile boolean sessionNoPublicUdp = false;
+    private volatile boolean peerMatchedWithoutCandidate = false;
+    private volatile boolean serviceDestroyed = false;
+    private volatile Socket pendingRelaySocket = null;
+    private volatile String lastRendezvousUrl = null;
+    private final Object mobileHolderLock = new Object();
+    private MobileNetworkHolder mobileHolder;
+    // Each bootstrap owns a token, so a thread left over from an earlier session
+    // can never continue on behalf of a newer one.
+    private volatile Object mobileBootstrapToken = null;
+
+    // Internet recovery. The secret arrives over the authenticated control channel
+    // and must never be logged. The relay only sees a hash of it as the room name.
+    private volatile byte[] recoverySecret = null;
+    private volatile byte[] pendingRecoverySecret = null;
+    private final AtomicBoolean internetRecoveryRunning = new AtomicBoolean(false);
+    private volatile int internetRecoveryAttempts = 0;
+    private volatile long nextInternetRecoveryElapsedMs = 0L;
+    private volatile boolean internetRecoverySkipLogged = false;
+    private volatile boolean internetRecoveryExhaustedShown = false;
+    private volatile InternetRecoveryAttempt currentRecoveryAttempt = null;
+    private ConnectivityManager.NetworkCallback networkWatch;
+    private volatile Network lastDefaultNetwork = null;
+    private volatile int networkChangeGeneration = 0;
+
     @Override public void onCreate() {
         super.onCreate();
         QuietLog.init(this);
@@ -238,6 +289,15 @@ public final class SessionService extends Service {
             SessionBus.canonicalVideoRotation(false);
             recoveryCount = 0;
             lastDiagRttMs = -1L;
+            // A missing extra means the local route, as on every restore path.
+            sessionRouteMobile = ConnectionRoute.isMobile(intent.getStringExtra(EXTRA_ROUTE));
+            SessionBus.routeMobile = sessionRouteMobile;
+            SessionBus.sessionEstablishedOnce = false;
+            SessionBus.securityPhrasePending = false;
+            sessionNetwork = null;
+            sessionNoPublicUdp = false;
+            peerMatchedWithoutCandidate = false;
+            resetInternetRecoveryState();
             host = ACTION_HOST.equals(action);
             mode = intent.getIntExtra(EXTRA_MODE, MODE_VOICE);
             sleepingBaby = mode == MODE_SLEEPING_BABY;
@@ -257,7 +317,8 @@ public final class SessionService extends Service {
                 return START_NOT_STICKY;
             }
             startForegroundForMode();
-            if (host) io.execute(this::startHost);
+            if (sessionRouteMobile) io.execute(this::startMobileSession);
+            else if (host) io.execute(this::startHost);
             else io.execute(this::startJoin);
         } else if (ACTION_DISCONNECT.equals(action)) {
             if (established.get() || SessionBus.active) disconnectManually();
@@ -766,7 +827,9 @@ public final class SessionService extends Service {
     }
 
     private void startForegroundForMode() {
-        Notification n = sessionNotification("Starting local connection…");
+        Notification n = sessionNotification(sessionRouteMobile
+                ? "Starting mobile network connection…"
+                : "Starting local connection…");
         if (Build.VERSION.SDK_INT >= 29) {
             int types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE | ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
             if (host && mode != MODE_VOICE && checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
@@ -798,11 +861,6 @@ public final class SessionService extends Service {
             lan.advertise(code, port);
             main.postDelayed(() -> {
                 if (!established.get() && !stopped.get()) {
-                    startOnlineRendezvousBootstrap();
-                }
-            }, 1500);
-            main.postDelayed(() -> {
-                if (!established.get() && !stopped.get()) {
                     wifiDirect = new WifiDirectHelper(this);
                     wifiDirect.startHost(code, port);
                 }
@@ -823,8 +881,153 @@ public final class SessionService extends Service {
         }
     }
 
-    private void startOnlineRendezvousBootstrap() {
-        if (code == null || !code.matches("\\d{6}") || stopped.get() || established.get()) return;
+    /**
+     * MOBILE NETWORK route. It skips LAN and Wi-Fi Direct and contacts the online
+     * service straight away, over cellular even when Wi-Fi is connected. Runs on
+     * an io thread because every step can block.
+     */
+    private void startMobileSession() {
+        final Object token = new Object();
+        mobileBootstrapToken = token;
+        try {
+            Network network = acquireSessionNetwork(token);
+            if (network == null || !mobileSessionPending(token)) return;
+
+            DatagramSocket udp = new DatagramSocket(0);
+            try {
+                network.bindSocket(udp);
+            } catch (IOException | RuntimeException e) {
+                udp.close();
+                throw e;
+            }
+            synchronized (this) {
+                if (!mobileSessionPending(token)) {
+                    udp.close();
+                    return;
+                }
+                DatagramSocket old = udpSocket;
+                udpSocket = udp;
+                sessionNetwork = network;
+                if (old != null) old.close();
+            }
+            startOnlineRendezvousBootstrap(token);
+        } catch (Exception e) {
+            QuietLog.log("ONLINE", "mobile_session_failed",
+                    "reason=" + e.getClass().getSimpleName());
+            if (mobileSessionPending(token)) {
+                SessionBus.status("Could not use the mobile network • disconnect and try again");
+            }
+        }
+    }
+
+    private Network acquireSessionNetwork(Object token) {
+        for (int attempt = 0; attempt < MOBILE_NETWORK_TRIES; attempt++) {
+            if (attempt > 0 && !waitWhileMobilePending(MOBILE_NETWORK_RETRY_MS, token)) return null;
+            if (attempt == 0) SessionBus.status("Connecting to mobile network…");
+
+            MobileNetworkHolder holder = mobileNetworkHolder();
+            Network cellular = holder == null ? null : holder.acquireCellular(MOBILE_NETWORK_WAIT_MS);
+            if (!mobileSessionPending(token)) return null;
+            if (cellular != null) {
+                sessionUsesCellular = true;
+                QuietLog.log("ONLINE", "mobile_network", "state=cellular");
+                return cellular;
+            }
+
+            Network fallback = MobileNetworkHolder.activeValidatedInternet(connectivity());
+            if (fallback != null) {
+                sessionUsesCellular = false;
+                QuietLog.log("ONLINE", "mobile_network", "state=fallback_internet");
+                SessionBus.status("No mobile network • using current internet connection");
+                return fallback;
+            }
+
+            QuietLog.log("ONLINE", "mobile_network", "state=unavailable");
+            SessionBus.status("No mobile network available • check mobile data");
+        }
+        return null;
+    }
+
+    private boolean mobileSessionPending() {
+        return sessionRouteMobile && !stopped.get() && !established.get() && !serviceDestroyed;
+    }
+
+    private boolean mobileSessionPending(Object token) {
+        return token == mobileBootstrapToken && mobileSessionPending();
+    }
+
+    private boolean waitWhileMobilePending(long ms, Object token) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        return mobileSessionPending(token);
+    }
+
+    private String mobileWaitingStatus() {
+        if (peerMatchedWithoutCandidate) {
+            return "Other phone has no public UDP address • no media path";
+        }
+        if (sessionNoPublicUdp) {
+            return "No public UDP address • direct media may not work";
+        }
+        return sessionUsesCellular
+                ? "Waiting for the other phone on the mobile network…"
+                : "No mobile network • waiting for the other phone over the internet…";
+    }
+
+    private void handleMobileRendezvousStatus(String rendezvousStatus) {
+        if (!mobileSessionPending() || onlineConnecting.get()) return;
+        if (RendezvousClient.STATUS_READY.equals(rendezvousStatus)) {
+            SessionBus.status(mobileWaitingStatus());
+        } else if (RendezvousClient.STATUS_UNAVAILABLE.equals(rendezvousStatus)) {
+            if (MobileNetworkHolder.isGone(connectivity(), sessionNetwork)) {
+                // The network this session was bound to has gone. Start again with
+                // a new socket rather than polling on a dead network.
+                stopOnlineRendezvous();
+                io.execute(this::startMobileSession);
+            } else {
+                SessionBus.status("Online service unreachable • retrying…");
+            }
+        }
+    }
+
+    private ConnectivityManager connectivity() {
+        return (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+    }
+
+    private MobileNetworkHolder mobileNetworkHolder() {
+        synchronized (mobileHolderLock) {
+            if (stopped.get() || serviceDestroyed) return null;
+            if (mobileHolder == null) mobileHolder = new MobileNetworkHolder(connectivity());
+            return mobileHolder;
+        }
+    }
+
+    private void releaseMobileNetwork() {
+        synchronized (mobileHolderLock) {
+            if (mobileHolder != null) mobileHolder.close();
+            mobileHolder = null;
+        }
+    }
+
+    private StunClient.Endpoint discoverPublicUdp(DatagramSocket socket, Network network) {
+        if (socket == null) return null;
+        try {
+            return StunClient.probe(socket, "stun.cloudflare.com", 3478, 3500, network);
+        } catch (Exception first) {
+            try {
+                return StunClient.probe(socket, "stun.cloudflare.com", 53, 3000, network);
+            } catch (Exception second) {
+                return null;
+            }
+        }
+    }
+
+    private void startOnlineRendezvousBootstrap(Object token) {
+        if (code == null || !code.matches("\\d{6}") || !mobileSessionPending(token)) return;
 
         String testUrl = OnlineTestConfig.get(this);
         if (testUrl != null && !testUrl.isEmpty()) {
@@ -842,40 +1045,60 @@ public final class SessionService extends Service {
                         "enabled=0 reason=promoted_to_production");
             } else {
                 QuietLog.log("ONLINE", "test_rendezvous_override", "enabled=1");
-                startOnlineRendezvousAt(testUrl, true);
+                startOnlineRendezvousAt(testUrl, true, token);
                 return;
             }
         }
 
-        OnlineStatus.check(result -> {
-            if (result == null || stopped.get() || established.get()) return;
+        // Production rendezvous signaling may be enabled before the public Online
+        // dot turns green. The dot remains conservative until full internet calling
+        // is validated, but CODE can already exchange candidates through the service.
+        for (int attempt = 0; attempt < ONLINE_SERVICE_TRIES; attempt++) {
+            if (attempt > 0 && !waitWhileMobilePending(ONLINE_SERVICE_RETRY_MS, token)) return;
+            OnlineStatus.Result result = OnlineStatus.probe(sessionNetwork);
+            if (!mobileSessionPending(token)) return;
 
-            // Production rendezvous signaling may be enabled before the public
-            // Online dot turns green. The dot remains conservative until full
-            // internet calling is validated, but CODE host/join can already
-            // exchange candidates through the permanent rendezvous service.
-            boolean rendezvousReady = result.reachable
+            boolean rendezvousReady = result != null
+                    && result.reachable
                     && result.rendezvousUrl != null
                     && !result.rendezvousUrl.isEmpty();
-            if (!rendezvousReady) {
-                QuietLog.log("ONLINE", "rendezvous_disabled",
-                        "reachable=" + (result.reachable ? 1 : 0)
-                                + " calls=" + (result.callsAvailable ? 1 : 0)
-                                + " endpoint=0");
+            if (rendezvousReady) {
+                lastRendezvousUrl = result.rendezvousUrl;
+                QuietLog.log("ONLINE", "production_rendezvous",
+                        "enabled=1 calls=" + (result.callsAvailable ? 1 : 0));
+                startOnlineRendezvousAt(result.rendezvousUrl, false, token);
                 return;
             }
 
-            QuietLog.log("ONLINE", "production_rendezvous",
-                    "enabled=1 calls=" + (result.callsAvailable ? 1 : 0));
-            startOnlineRendezvousAt(result.rendezvousUrl, false);
-        });
+            QuietLog.log("ONLINE", "rendezvous_disabled",
+                    "reachable=" + (result != null && result.reachable ? 1 : 0) + " endpoint=0");
+            SessionBus.status("Online service unreachable • retrying…");
+        }
+        SessionBus.status("Online service unreachable • check your connection and try again");
     }
 
-    private void startOnlineRendezvousAt(String rendezvousUrl, boolean testMode) {
+    private void startOnlineRendezvousAt(String rendezvousUrl, boolean testMode, Object token) {
+        if (!mobileSessionPending(token)) return;
+
+        // STUN can take several seconds, so it stays outside the service lock.
+        // Holding the lock here would stall disconnect and every other session action.
+        StunClient.Endpoint publicUdp = discoverPublicUdp(udpSocket, sessionNetwork);
+        QuietLog.log("ONLINE", "candidate_ready",
+                publicUdp != null ? "udp=1 count=1" : "udp=0 count=0");
+        sessionNoPublicUdp = publicUdp == null;
+        peerMatchedWithoutCandidate = false;
+        if (testMode) {
+            SessionBus.status(publicUdp != null
+                    ? "Online test • candidate ready • registering…"
+                    : "Online test • no public UDP candidate");
+        } else if (publicUdp == null) {
+            SessionBus.status(mobileWaitingStatus());
+        }
+
         synchronized (SessionService.this) {
-            if (stopped.get() || established.get() || onlineRendezvous != null) return;
+            if (!mobileSessionPending(token) || onlineRendezvous != null) return;
             try {
-                onlineRendezvous = new RendezvousClient(
+                RendezvousClient client = new RendezvousClient(
                         rendezvousUrl,
                         code,
                         host,
@@ -893,9 +1116,15 @@ public final class SessionService extends Service {
                                                 ? "Online test • peer matched • candidate received"
                                                 : "Online test • peer matched • no candidate received");
                                     } else if (count > 0) {
-                                        SessionBus.status(
-                                                "Internet peer found • checking connection paths…");
+                                        peerMatchedWithoutCandidate = false;
+                                        if (!onlineConnecting.get()) {
+                                            SessionBus.status(
+                                                    "Internet peer found • checking connection paths…");
+                                        }
                                         startInternetRelaySession(match);
+                                    } else {
+                                        peerMatchedWithoutCandidate = true;
+                                        SessionBus.status(mobileWaitingStatus());
                                     }
                                 }
                             }
@@ -903,61 +1132,40 @@ public final class SessionService extends Service {
                             @Override public void onStatus(String onlineStatus) {
                                 String safeStatus = onlineStatus == null ? "" : onlineStatus;
                                 QuietLog.log("ONLINE", "rendezvous_status", safeStatus);
-                                if (testMode && !established.get() && !safeStatus.isEmpty()) {
-                                    SessionBus.status("TEST • " + safeStatus);
+                                if (testMode) {
+                                    if (!established.get() && !safeStatus.isEmpty()) {
+                                        SessionBus.status("TEST • " + safeStatus);
+                                    }
+                                } else {
+                                    handleMobileRendezvousStatus(safeStatus);
                                 }
                             }
-                        });
+                        },
+                        sessionNetwork);
 
-                try {
-                    StunClient.Endpoint publicUdp = null;
-                    try {
-                        publicUdp = StunClient.probe(
-                                udpSocket, "stun.cloudflare.com", 3478, 3500);
-                    } catch (Exception first) {
-                        try {
-                            publicUdp = StunClient.probe(
-                                    udpSocket, "stun.cloudflare.com", 53, 3000);
-                        } catch (Exception ignored) {}
-                    }
-
-                    if (publicUdp != null) {
-                        org.json.JSONArray candidates = new org.json.JSONArray();
-                        candidates.put(publicUdp.toCandidateJson());
-                        onlineRendezvous.setCandidates(candidates);
-                        QuietLog.log("ONLINE", "candidate_ready",
-                                "udp=1 count=1");
-                        if (testMode) {
-                            SessionBus.status("Online test • candidate ready • registering…");
-                        }
-                    } else {
-                        QuietLog.log("ONLINE", "candidate_ready",
-                                "udp=0 count=0");
-                        if (testMode) {
-                            SessionBus.status("Online test • no public UDP candidate");
-                        }
-                    }
-                } catch (Exception e) {
-                    QuietLog.log("ONLINE", "candidate_discovery_failed",
-                            "reason=" + e.getClass().getSimpleName());
-                    if (testMode) {
-                        SessionBus.status("Online test • candidate discovery failed");
-                    }
+                if (publicUdp != null) {
+                    org.json.JSONArray candidates = new org.json.JSONArray();
+                    candidates.put(publicUdp.toCandidateJson());
+                    client.setCandidates(candidates);
                 }
-
-                onlineRendezvous.start();
+                onlineRendezvous = client;
+                client.start();
             } catch (Exception e) {
                 QuietLog.log("ONLINE", "rendezvous_start_failed",
                         "reason=" + e.getClass().getSimpleName());
-                if (testMode) {
-                    SessionBus.status("Online test • rendezvous could not start");
-                }
+                SessionBus.status(testMode
+                        ? "Online test • rendezvous could not start"
+                        : "Online service unreachable • check your connection and try again");
                 onlineRendezvous = null;
             }
         }
     }
 
     private synchronized void stopOnlineRendezvous() {
+        Socket pendingRelay = pendingRelaySocket;
+        pendingRelaySocket = null;
+        try { if (pendingRelay != null) pendingRelay.close(); }
+        catch (Exception ignored) {}
         try { if (onlineRendezvous != null) onlineRendezvous.close(); }
         catch (Exception ignored) {}
         onlineRendezvous = null;
@@ -991,17 +1199,26 @@ public final class SessionService extends Service {
                 SessionBus.status("Internet peer found • establishing secure session…");
                 relaySocket = rendezvous.openRelaySocket(match, mediaEndpoint.getAddress());
                 QuietLog.log("ONLINE", "internet_control_relay", "state=starting");
-                establishCodeSession(
+                establishRelayCodeSession(
                         relaySocket,
                         mediaEndpoint.getAddress(),
-                        mediaEndpoint.getPort(),
-                        true);
+                        mediaEndpoint.getPort());
             } catch (Exception e) {
                 try { if (relaySocket != null) relaySocket.close(); } catch (Exception ignored) {}
                 QuietLog.log("ONLINE", "internet_session_failed",
                         "reason=" + e.getClass().getSimpleName());
+                boolean serverOutdated = RelayUnavailableException.isCauseOf(e);
                 if (!stopped.get() && !established.get()) {
-                    SessionBus.status("Internet path not connected • local search continues");
+                    SessionBus.status(serverOutdated
+                            ? "Online relay unavailable • the QuietLink server needs updating"
+                            : "Could not connect to the other phone over the internet • retrying…");
+                }
+                // The service reports a match on every poll, so pause before the
+                // next try. onlineConnecting stays set until this thread ends.
+                try {
+                    Thread.sleep(serverOutdated ? RELAY_UNAVAILABLE_PAUSE_MS : RELAY_RETRY_PAUSE_MS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
                 }
             } finally {
                 if (!established.get()) {
@@ -1036,11 +1253,6 @@ public final class SessionService extends Service {
             udpSocket = new DatagramSocket(0);
             lan = new LanDiscovery(this);
             lan.discover(code, (address, port) -> connectOnce(address, port, "lan"));
-            main.postDelayed(() -> {
-                if (!established.get() && !connecting.get() && !stopped.get()) {
-                    startOnlineRendezvousBootstrap();
-                }
-            }, 1500);
             main.postDelayed(() -> {
                 // Start P2P discovery even if a transient LAN socket attempt is
                 // in progress. Older code skipped this one-shot fallback when
@@ -1099,19 +1311,66 @@ public final class SessionService extends Service {
     }
 
     private synchronized void establishCodeSession(Socket socket) throws Exception {
-        establishCodeSession(socket, null, 0, false);
-    }
-
-    private synchronized void establishCodeSession(
-            Socket socket, InetAddress mediaAddress, int mediaPort, boolean internetRelay) throws Exception {
         if (established.get() || stopped.get()) {
             socket.close();
             return;
         }
 
-        SessionBus.status(internetRelay ? "Establishing encrypted internet session…" : "Connecting…");
+        SessionBus.status("Connecting…");
         CryptoChannel newCrypto = CryptoChannel.handshake(socket, host, code, udpSocket.getLocalPort());
+        negotiateCodeSession(newCrypto, socket);
+        crypto = newCrypto;
+        activateConnectedSession(socket);
+    }
 
+    /**
+     * A relay handshake waits on HTTP long polls for many seconds, so it runs
+     * outside the service lock. Disconnect stays responsive and closes the relay
+     * through stopOnlineRendezvous().
+     */
+    private void establishRelayCodeSession(Socket socket, InetAddress mediaAddress, int mediaPort)
+            throws Exception {
+        if (mediaAddress == null || mediaPort < 1 || mediaPort > 65535) {
+            throw new IOException("Invalid internet media endpoint");
+        }
+        DatagramSocket udp = udpSocket;
+        if (established.get() || stopped.get() || udp == null) {
+            socket.close();
+            return;
+        }
+
+        SessionBus.status("Establishing encrypted internet session…");
+        pendingRelaySocket = socket;
+        try {
+            CryptoChannel newCrypto = CryptoChannel.handshake(socket, host, code, udp.getLocalPort());
+            negotiateCodeSession(newCrypto, socket);
+
+            synchronized (this) {
+                if (established.get() || stopped.get()) {
+                    newCrypto.close();
+                    if (stopped.get()) {
+                        activePeerFingerprint = null;
+                        activePeerIdentityPublic = null;
+                    }
+                    return;
+                }
+                crypto = newCrypto;
+                try {
+                    activateConnectedSession(socket, mediaAddress, mediaPort, true);
+                } catch (Exception e) {
+                    established.set(false);
+                    internetControlRelay = false;
+                    try { newCrypto.close(); } catch (Exception ignored) {}
+                    crypto = null;
+                    throw e;
+                }
+            }
+        } finally {
+            if (pendingRelaySocket == socket) pendingRelaySocket = null;
+        }
+    }
+
+    private void negotiateCodeSession(CryptoChannel newCrypto, Socket socket) throws Exception {
         if (host) {
             newCrypto.sendControl("MODE:" + mode);
         } else {
@@ -1129,16 +1388,6 @@ public final class SessionService extends Service {
             exchangeCodeIdentity(newCrypto, socket);
         } catch (Exception ignored) {
             // Identity exchange is optional for compatibility with older QuietLink builds.
-        }
-
-        crypto = newCrypto;
-        if (internetRelay) {
-            if (mediaAddress == null || mediaPort < 1 || mediaPort > 65535) {
-                throw new IOException("Invalid internet media endpoint");
-            }
-            activateConnectedSession(socket, mediaAddress, mediaPort, true);
-        } else {
-            activateConnectedSession(socket);
         }
     }
 
@@ -1206,8 +1455,16 @@ public final class SessionService extends Service {
         established.set(true);
         connecting.set(false);
         internetControlRelay = internetRelay;
+        SessionBus.sessionEstablishedOnce = true;
+        SessionBus.securityPhrasePending = sessionRouteMobile && !resumed;
+        internetRecoveryAttempts = 0;
+        nextInternetRecoveryElapsedMs = 0L;
+        internetRecoveryExhaustedShown = false;
         if (!internetRelay) {
             stopOnlineRendezvous();
+            cancelInternetRecovery();
+            releaseMobileNetwork();
+            sessionNetwork = null;
         } else {
             onlineConnecting.set(true);
             QuietLog.log("ONLINE", "internet_control_relay", "state=connected");
@@ -1305,6 +1562,9 @@ public final class SessionService extends Service {
         sendControl("VIDEO_CAPS:" + localVideoCaps());
         sendControl("RESUME_CAP:" + (localAutoResumePreference() ? "1" : "0"));
         persistRecoveryCheckpoint();
+        startNetworkWatch();
+        offerRecoveryRoom();
+        if (internetRelay) scheduleNoIncomingMediaCheck();
 
         if (mode == MODE_BABY) {
             if (babyStation) {
@@ -1381,9 +1641,10 @@ public final class SessionService extends Service {
     }
 
     private void controlLoop() {
+        final CryptoChannel loopChannel = crypto;
         try {
-            while (!stopped.get() && established.get()) {
-                String c = crypto.readControl();
+            while (!stopped.get() && established.get() && crypto == loopChannel) {
+                String c = loopChannel.readControl();
                 boolean wasStale = peerStaleWarningShown;
                 lastPeerSeenElapsedMs = SystemClock.elapsedRealtime();
                 peerStaleWarningShown = false;
@@ -1415,6 +1676,10 @@ public final class SessionService extends Service {
                         persistRecoveryCheckpoint();
                         startRecoveryBeacon();
                     }
+                } else if (c.startsWith(ConnectionRoute.RECOVERY_ROOM_MESSAGE)) {
+                    handleRecoveryRoomOffer(c.substring(ConnectionRoute.RECOVERY_ROOM_MESSAGE.length()));
+                } else if (ConnectionRoute.RECOVERY_ROOM_ACK_MESSAGE.equals(c)) {
+                    handleRecoveryRoomAck();
                 } else if (c.startsWith("VIDEO_CAPS:")) {
                     String caps = c.substring("VIDEO_CAPS:".length());
                     peerCanonicalRotation = caps.contains("ROT_REL2");
@@ -1569,9 +1834,13 @@ public final class SessionService extends Service {
                 }
             }
         } catch (SocketTimeoutException e) {
-            if (!stopped.get()) handleConnectionLoss(peerLostReason("Heartbeat timeout"));
+            if (!stopped.get() && crypto == loopChannel) {
+                handleConnectionLoss(peerLostReason("Heartbeat timeout"));
+            }
         } catch (Exception e) {
-            if (!stopped.get()) handleConnectionLoss(peerLostReason("Connection lost"));
+            if (!stopped.get() && crypto == loopChannel) {
+                handleConnectionLoss(peerLostReason("Connection lost"));
+            }
         }
     }
 
@@ -1635,6 +1904,8 @@ public final class SessionService extends Service {
             stopOnlineRendezvous();
             internetControlRelay = false;
         }
+        sessionNetwork = null;
+        if (!allowMobileReconnect()) releaseMobileNetwork();
 
         try { if (audio != null) audio.close(); } catch (Exception ignored) {}
         try { if (video != null) video.close(); } catch (Exception ignored) {}
@@ -1666,6 +1937,521 @@ public final class SessionService extends Service {
         startRecoveryResources();
         scheduleRecoveryMaintenance();
         startServiceWatchdog();
+        maybeStartInternetRecovery();
+    }
+
+    private boolean allowMobileReconnect() {
+        try {
+            return getSharedPreferences(ConnectionRoute.PREFS, MODE_PRIVATE).getBoolean(
+                    ConnectionRoute.PREF_ALLOW_MOBILE_RECONNECT,
+                    ConnectionRoute.DEFAULT_ALLOW_MOBILE_RECONNECT);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void resetInternetRecoveryState() {
+        recoverySecret = null;
+        pendingRecoverySecret = null;
+        internetRecoveryAttempts = 0;
+        nextInternetRecoveryElapsedMs = 0L;
+        internetRecoverySkipLogged = false;
+        internetRecoveryExhaustedShown = false;
+    }
+
+    /**
+     * The side with the lower fingerprint creates the recovery secret. No ack means
+     * the peer does not support internet recovery, which older peers show by
+     * ignoring this message as an unknown control message.
+     */
+    private void offerRecoveryRoom() {
+        if (!allowMobileReconnect() || recoverySecret != null) return;
+        if (deviceIdentity == null || activePeerFingerprint == null) return;
+        if (!ConnectionRoute.isRecoveryHost(deviceIdentity.fingerprint(), activePeerFingerprint)) return;
+
+        byte[] offer = pendingRecoverySecret;
+        if (offer == null) {
+            offer = new byte[ConnectionRoute.RECOVERY_SECRET_BYTES];
+            new java.security.SecureRandom().nextBytes(offer);
+            pendingRecoverySecret = offer;
+        }
+        sendControl(ConnectionRoute.RECOVERY_ROOM_MESSAGE + ConnectionRoute.encodeRecoverySecret(offer));
+    }
+
+    private void handleRecoveryRoomOffer(String encoded) {
+        if (!allowMobileReconnect() || deviceIdentity == null || activePeerFingerprint == null) return;
+        if (ConnectionRoute.isRecoveryHost(deviceIdentity.fingerprint(), activePeerFingerprint)) return;
+        byte[] secret = ConnectionRoute.decodeRecoverySecret(encoded);
+        if (secret == null) {
+            QuietLog.log("ONLINE", "recovery_room", "state=rejected");
+            return;
+        }
+        recoverySecret = secret;
+        persistRecoveryCheckpoint();
+        sendControl(ConnectionRoute.RECOVERY_ROOM_ACK_MESSAGE);
+        QuietLog.log("ONLINE", "recovery_room", "state=stored");
+    }
+
+    private void handleRecoveryRoomAck() {
+        byte[] offered = pendingRecoverySecret;
+        if (offered == null) return;
+        recoverySecret = offered;
+        pendingRecoverySecret = null;
+        persistRecoveryCheckpoint();
+        QuietLog.log("ONLINE", "recovery_room", "state=confirmed");
+    }
+
+    /**
+     * Starts one background attempt when one is due. Internet is an additional
+     * recovery candidate: it never touches the connecting flag, the recovery
+     * listener or the local udpSocket, so a failed attempt cannot block
+     * PeerDiscovery, LAN or Wi-Fi Direct recovery.
+     */
+    private void maybeStartInternetRecovery() {
+        if (!recovering || stopped.get() || established.get() || serviceDestroyed) return;
+        if (!allowMobileReconnect()) return;
+        if (deviceIdentity == null || activePeerFingerprint == null || activePeerIdentityPublic == null) return;
+
+        byte[] secret = recoverySecret;
+        if (secret == null) {
+            if (!internetRecoverySkipLogged) {
+                internetRecoverySkipLogged = true;
+                QuietLog.log("ONLINE", "internet_recovery_skipped", "reason=no_capability");
+            }
+            return;
+        }
+        if (internetRecoveryRunning.get()) return;
+        if (ConnectionRoute.recoveryAttemptsExhausted(internetRecoveryAttempts)) {
+            if (!internetRecoveryExhaustedShown) {
+                internetRecoveryExhaustedShown = true;
+                releaseMobileNetwork();
+                QuietLog.log("ONLINE", "internet_recovery_stopped", "reason=attempts_exhausted");
+                SessionBus.status("Could not reconnect over the internet • still searching nearby");
+            }
+            return;
+        }
+        if (SystemClock.elapsedRealtime() < nextInternetRecoveryElapsedMs) return;
+        if (!internetRecoveryRunning.compareAndSet(false, true)) return;
+
+        internetRecoveryAttempts++;
+        try {
+            io.execute(() -> runInternetRecoveryAttempt(secret));
+        } catch (RejectedExecutionException e) {
+            internetRecoveryRunning.set(false);
+        }
+    }
+
+    private void runInternetRecoveryAttempt(byte[] secret) {
+        InternetRecoveryAttempt attempt = new InternetRecoveryAttempt();
+        currentRecoveryAttempt = attempt;
+        try {
+            connectInternetRecovery(attempt, secret);
+        } catch (Exception e) {
+            QuietLog.log("ONLINE", "internet_recovery_failed",
+                    "reason=" + e.getClass().getSimpleName());
+            recoveryStatus(RelayUnavailableException.isCauseOf(e)
+                    ? "Reconnecting • the QuietLink server needs updating for internet recovery"
+                    : "Reconnecting • internet attempt failed, retrying…");
+        } finally {
+            attempt.closeAll();
+            if (currentRecoveryAttempt == attempt) currentRecoveryAttempt = null;
+            nextInternetRecoveryElapsedMs = SystemClock.elapsedRealtime()
+                    + ConnectionRoute.recoveryBackoffMs(internetRecoveryAttempts);
+            internetRecoveryRunning.set(false);
+        }
+    }
+
+    private void connectInternetRecovery(InternetRecoveryAttempt attempt, byte[] secret) throws Exception {
+        Network network = chooseRecoveryNetwork();
+        if (!internetRecoveryWanted(attempt)) return;
+        if (network == null) {
+            recoveryStatus("Reconnecting • no internet network yet…");
+            return;
+        }
+        attempt.network = network;
+
+        String label = MobileNetworkHolder.isCellular(connectivity(), network)
+                ? "Reconnecting over mobile network…"
+                : "Reconnecting over the internet…";
+        recoveryStatus(label);
+        updateSessionNotification(label);
+
+        // The old sockets belong to a network that may be gone, so everything here
+        // is new: a separate UDP socket, its own STUN candidate and a new registration.
+        DatagramSocket udp = new DatagramSocket(0);
+        attempt.own(udp);
+        network.bindSocket(udp);
+        StunClient.Endpoint publicUdp = discoverPublicUdp(udp, network);
+        if (!internetRecoveryWanted(attempt)) return;
+        if (publicUdp == null) {
+            QuietLog.log("ONLINE", "candidate_ready", "udp=0 count=0");
+            recoveryStatus("Reconnecting • no public UDP address on this network");
+            return;
+        }
+
+        String rendezvousUrl = recoveryRendezvousUrl(network);
+        if (!internetRecoveryWanted(attempt)) return;
+        if (rendezvousUrl == null) {
+            recoveryStatus("Reconnecting • online service unreachable");
+            return;
+        }
+
+        boolean recoveryHost = ConnectionRoute.isRecoveryHost(
+                deviceIdentity.fingerprint(), activePeerFingerprint);
+        org.json.JSONArray candidates = new org.json.JSONArray();
+        candidates.put(publicUdp.toCandidateJson());
+        RendezvousClient client = RendezvousClient.forRecoveryRoom(
+                rendezvousUrl,
+                ConnectionRoute.deriveRecoveryRoom(secret),
+                recoveryHost,
+                CryptoChannel.PROTOCOL_VERSION,
+                network,
+                new RendezvousClient.Listener() {
+                    @Override public void onPeerMatch(RendezvousClient.Match match) {
+                        if (match != null) attempt.match.set(match);
+                    }
+
+                    @Override public void onStatus(String onlineStatus) {
+                        QuietLog.log("ONLINE", "recovery_rendezvous_status",
+                                onlineStatus == null ? "" : onlineStatus);
+                    }
+                });
+        client.setCandidates(candidates);
+        attempt.ownAndStart(client);
+
+        long deadline = SystemClock.elapsedRealtime() + INTERNET_RECOVERY_MATCH_WAIT_MS;
+        while (attempt.match.get() == null) {
+            if (!internetRecoveryWanted(attempt)) return;
+            if (SystemClock.elapsedRealtime() >= deadline) {
+                recoveryStatus("Reconnecting • waiting for the other phone…");
+                return;
+            }
+            Thread.sleep(500L);
+        }
+
+        // A nearby peer is the better path, so give local recovery the first chance.
+        long localDeadline = SystemClock.elapsedRealtime() + LOCAL_RECOVERY_PRIORITY_MS;
+        while (expectedPeerVisibleNearby() && SystemClock.elapsedRealtime() < localDeadline) {
+            if (!internetRecoveryWanted(attempt)) return;
+            Thread.sleep(250L);
+        }
+        if (!internetRecoveryWanted(attempt)) return;
+
+        RendezvousClient.Match match = attempt.match.get();
+        if (match.protocolVersion != CryptoChannel.PROTOCOL_VERSION) {
+            QuietLog.log("ONLINE", "internet_protocol_mismatch", "protocol=" + match.protocolVersion);
+            recoveryStatus("Reconnecting • the other phone uses a different QuietLink security version");
+            return;
+        }
+        InetSocketAddress mediaEndpoint = selectOnlineMediaCandidate(match.candidates);
+        if (mediaEndpoint == null || mediaEndpoint.getAddress() == null) {
+            recoveryStatus("Reconnecting • the other phone has no public UDP address");
+            return;
+        }
+
+        recoveryStatus("Reconnecting • establishing secure session…");
+        RendezvousRelaySocket relay = client.openRelaySocket(match, mediaEndpoint.getAddress());
+        attempt.own(relay);
+        relay.setSoTimeout((int) INTERNET_RECOVERY_HANDSHAKE_MS);
+
+        // The same signed handshake as local recovery. The relay can carry it but
+        // cannot complete it without the expected device's identity key.
+        CryptoChannel channel = CryptoChannel.handshakeNearby(
+                relay, recoveryHost, deviceIdentity.keyPair(), udp.getLocalPort());
+        try {
+            if (!isExpectedRecoveryPeer(channel)) {
+                throw new IOException("Recovery device identity changed");
+            }
+            String localName = encodeName(deviceIdentity.deviceName());
+            if (recoveryHost) {
+                String request = channel.readControl();
+                if (request == null || !request.startsWith("RECOVER|")) {
+                    throw new IOException("Recovery was not requested");
+                }
+                channel.sendControl("RECOVER_ACCEPT|" + localName);
+                if (!"READY".equals(channel.readControl())) {
+                    throw new IOException("Recovery peer did not confirm");
+                }
+            } else {
+                channel.sendControl("RECOVER|" + localName);
+                String answer = channel.readControl();
+                if (answer == null || !answer.startsWith("RECOVER_ACCEPT|")) {
+                    throw new IOException("Recovery was not accepted");
+                }
+                channel.sendControl("READY");
+            }
+            relay.setSoTimeout(0);
+
+            if (!finalizeInternetRecovered(attempt, channel, relay, mediaEndpoint)) {
+                channel.close();
+            }
+        } catch (Exception e) {
+            try { channel.close(); } catch (Exception ignored) {}
+            throw e;
+        }
+    }
+
+    private Network chooseRecoveryNetwork() {
+        ConnectivityManager connectivity = connectivity();
+        MobileNetworkHolder holder = mobileNetworkHolder();
+        if (sessionRouteMobile) {
+            Network cellular = holder == null ? null : holder.acquireCellular(MOBILE_NETWORK_WAIT_MS);
+            return cellular != null ? cellular : MobileNetworkHolder.activeValidatedInternet(connectivity);
+        }
+        // A phone still on working Wi-Fi uses it. A Wi-Fi Direct group or a network
+        // without internet access never counts here, because it is not validated.
+        Network active = MobileNetworkHolder.activeValidatedInternet(connectivity);
+        if (active != null) return active;
+        return holder == null ? null : holder.acquireCellular(RECOVERY_CELLULAR_WAIT_MS);
+    }
+
+    private String recoveryRendezvousUrl(Network network) {
+        String testUrl = OnlineTestConfig.get(this);
+        if (testUrl != null && !testUrl.isEmpty()) return testUrl;
+        OnlineStatus.Result result = OnlineStatus.probe(network);
+        if (result != null && result.reachable
+                && result.rendezvousUrl != null && !result.rendezvousUrl.isEmpty()) {
+            lastRendezvousUrl = result.rendezvousUrl;
+            return result.rendezvousUrl;
+        }
+        return lastRendezvousUrl;
+    }
+
+    private boolean expectedPeerVisibleNearby() {
+        String expected = activePeerFingerprint;
+        if (expected == null) return false;
+        for (PeerDiscovery.Peer peer : recoveryPeers) {
+            if (expected.equals(peer.fingerprint)) return true;
+        }
+        return false;
+    }
+
+    private boolean internetRecoveryWanted(InternetRecoveryAttempt attempt) {
+        return !attempt.isCancelled()
+                && currentRecoveryAttempt == attempt
+                && recovering
+                && !stopped.get()
+                && !established.get()
+                && !serviceDestroyed;
+    }
+
+    private void recoveryStatus(String text) {
+        if (recovering && !stopped.get() && !established.get()) SessionBus.status(text);
+    }
+
+    private synchronized boolean finalizeInternetRecovered(
+            InternetRecoveryAttempt attempt, CryptoChannel channel, Socket relay,
+            InetSocketAddress mediaEndpoint) throws Exception {
+        if (!internetRecoveryWanted(attempt)) return false;
+
+        activePeerFingerprint = channel.getPeerFingerprint();
+        activePeerIdentityPublic = Arrays.copyOf(
+                channel.getPeerIdentityPublic(), channel.getPeerIdentityPublic().length);
+
+        Network network = attempt.network;
+        DatagramSocket oldUdp = udpSocket;
+        DatagramSocket newUdp = attempt.udp();
+        RendezvousClient newClient = attempt.client();
+        attempt.detach();
+        currentRecoveryAttempt = null;
+
+        stopOnlineRendezvous();
+        onlineRendezvous = newClient;
+        udpSocket = newUdp;
+        if (oldUdp != null && oldUdp != newUdp) oldUdp.close();
+        sessionNetwork = network;
+        crypto = channel;
+        connecting.set(false);
+
+        // Keep the cellular request only when this session actually runs on it.
+        synchronized (mobileHolderLock) {
+            if (mobileHolder != null && (network == null || !network.equals(mobileHolder.current()))) {
+                mobileHolder.close();
+                mobileHolder = null;
+            }
+        }
+
+        try {
+            activateConnectedSession(relay, mediaEndpoint.getAddress(), mediaEndpoint.getPort(), true);
+            QuietLog.log("ONLINE", "internet_recovery", "state=connected");
+            return true;
+        } catch (Exception e) {
+            // Back to plain recovery, with a socket that local recovery can use.
+            established.set(false);
+            internetControlRelay = false;
+            recovering = true;
+            stopOnlineRendezvous();
+            sessionNetwork = null;
+            crypto = null;
+            try { newUdp.close(); } catch (Exception ignored) {}
+            udpSocket = new DatagramSocket(0);
+            throw e;
+        }
+    }
+
+    private void cancelInternetRecovery() {
+        InternetRecoveryAttempt attempt = currentRecoveryAttempt;
+        currentRecoveryAttempt = null;
+        if (attempt != null) attempt.cancel();
+    }
+
+    /** Starts recovery soon after a network change. It never tears a session down itself. */
+    private synchronized void startNetworkWatch() {
+        if (networkWatch != null || stopped.get() || serviceDestroyed || !allowMobileReconnect()) return;
+        ConnectivityManager connectivity = connectivity();
+        if (connectivity == null) return;
+        ConnectivityManager.NetworkCallback callback = new ConnectivityManager.NetworkCallback() {
+            @Override public void onAvailable(Network network) {
+                handleDefaultNetworkChanged(network);
+            }
+
+            @Override public void onLost(Network network) {
+                if (network != null && network.equals(lastDefaultNetwork)) {
+                    handleDefaultNetworkChanged(null);
+                }
+            }
+        };
+        try {
+            // Android reports the current default at once. This baseline makes
+            // that first report a no-op, so registering never looks like a change.
+            lastDefaultNetwork = connectivity.getActiveNetwork();
+            connectivity.registerDefaultNetworkCallback(callback, main);
+            networkWatch = callback;
+        } catch (RuntimeException e) {
+            QuietLog.log("ONLINE", "network_watch_failed", "reason=" + e.getClass().getSimpleName());
+        }
+    }
+
+    private synchronized void stopNetworkWatch() {
+        networkChangeGeneration++;
+        ConnectivityManager.NetworkCallback callback = networkWatch;
+        networkWatch = null;
+        if (callback == null) return;
+        try {
+            connectivity().unregisterNetworkCallback(callback);
+        } catch (RuntimeException ignored) {}
+    }
+
+    /** Runs on the main thread, where the callback was registered. */
+    private void handleDefaultNetworkChanged(Network current) {
+        if (stopped.get() || serviceDestroyed || !allowMobileReconnect()) return;
+        Network previous = lastDefaultNetwork;
+        if (current == null ? previous == null : current.equals(previous)) return;
+        lastDefaultNetwork = current;
+        QuietLog.log("ONLINE", "default_network_changed", "present=" + (current != null ? 1 : 0));
+        int generation = ++networkChangeGeneration;
+
+        if (established.get()) {
+            // Cellular appearing or Wi-Fi returning must not break a working call,
+            // so only a peer that stays silent after a keepalive counts as lost.
+            long peerSeenAtEvent = lastPeerSeenElapsedMs;
+            sendControl("PING");
+            main.postDelayed(() -> {
+                if (generation != networkChangeGeneration || stopped.get()
+                        || serviceDestroyed || !established.get()) return;
+                if (!ConnectionRoute.shouldDeclareLossAfterNetworkChange(
+                        peerSeenAtEvent, lastPeerSeenElapsedMs)) return;
+                try {
+                    io.execute(() -> handleConnectionLoss(peerLostReason("Network changed")));
+                } catch (RejectedExecutionException ignored) {}
+            }, NETWORK_CHANGE_LIVENESS_MS);
+            return;
+        }
+
+        if (recovering) {
+            InternetRecoveryAttempt attempt = currentRecoveryAttempt;
+            if (attempt != null) {
+                Network attemptNetwork = attempt.network;
+                boolean attemptNetworkGone = attemptNetwork != null
+                        && MobileNetworkHolder.isGone(connectivity(), attemptNetwork);
+                boolean betterDefault = !sessionRouteMobile && current != null
+                        && attemptNetwork != null && !current.equals(attemptNetwork)
+                        && !attempt.hasRelay();
+                if (attemptNetworkGone || betterDefault) {
+                    attempt.cancel();
+                    if (currentRecoveryAttempt == attempt) currentRecoveryAttempt = null;
+                }
+            }
+            internetRecoveryAttempts = 0;
+            nextInternetRecoveryElapsedMs = 0L;
+            internetRecoveryExhaustedShown = false;
+            maybeStartInternetRecovery();
+        }
+    }
+
+    /**
+     * There is no media relay, so a carrier that blocks direct UDP leaves a call that
+     * connects but stays silent. Say so instead of showing a healthy status.
+     */
+    private void scheduleNoIncomingMediaCheck() {
+        MediaTransport watched = media;
+        main.postDelayed(() -> {
+            if (watched == null || stopped.get() || serviceDestroyed || !established.get()
+                    || !internetControlRelay || media != watched) return;
+            // A baby station and a sleeping-monitor parent can both be quiet by design.
+            if (mode == MODE_BABY && (babyStation || sleepingBaby)) return;
+            if (watched.audioRxPackets() > 0 || watched.videoRxPackets() > 0) return;
+            QuietLog.log("ONLINE", "no_incoming_audio", "");
+            SessionBus.status("Connected, but no audio is arriving • the other phone may be muted, "
+                    + "or the carrier may be blocking direct connections");
+        }, NO_INCOMING_MEDIA_CHECK_MS);
+    }
+
+    /** Resources of one internet recovery attempt. They stay separate until it succeeds. */
+    private static final class InternetRecoveryAttempt {
+        final java.util.concurrent.atomic.AtomicReference<RendezvousClient.Match> match =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        volatile Network network;
+        private DatagramSocket udp;
+        private RendezvousClient client;
+        private Socket relay;
+        private boolean cancelled;
+
+        synchronized boolean isCancelled() { return cancelled; }
+        synchronized boolean hasRelay() { return relay != null; }
+        synchronized DatagramSocket udp() { return udp; }
+        synchronized RendezvousClient client() { return client; }
+
+        synchronized void own(DatagramSocket socket) throws IOException {
+            udp = socket;
+            if (cancelled) {
+                closeAll();
+                throw new IOException("Recovery attempt cancelled");
+            }
+        }
+
+        synchronized void own(Socket socket) throws IOException {
+            relay = socket;
+            if (cancelled) {
+                closeAll();
+                throw new IOException("Recovery attempt cancelled");
+            }
+        }
+
+        synchronized void ownAndStart(RendezvousClient rendezvous) throws IOException {
+            if (cancelled) throw new IOException("Recovery attempt cancelled");
+            client = rendezvous;
+            rendezvous.start();
+        }
+
+        synchronized void cancel() {
+            cancelled = true;
+            closeAll();
+        }
+
+        synchronized void closeAll() {
+            try { if (relay != null) relay.close(); } catch (Exception ignored) {}
+            try { if (client != null) client.close(); } catch (Exception ignored) {}
+            try { if (udp != null) udp.close(); } catch (Exception ignored) {}
+            detach();
+        }
+
+        /** After success the service owns the resources, so closing here must do nothing. */
+        synchronized void detach() {
+            relay = null;
+            client = null;
+            udp = null;
+        }
     }
 
     private boolean localAutoResumePreference() {
@@ -1742,6 +2528,15 @@ public final class SessionService extends Service {
             socket.setSoTimeout(6000);
             String request = channel.readControl();
             if (request == null || !request.startsWith("RECOVER|")) {
+                channel.close();
+                return;
+            }
+
+            // A late local candidate must not destroy a recovered internet session
+            // that is demonstrably alive. The heartbeat still catches a real loss.
+            if (internetControlRelay
+                    && SystemClock.elapsedRealtime() - lastPeerSeenElapsedMs < LIVE_RELAY_GUARD_MS) {
+                QuietLog.log("ONLINE", "late_recovery_candidate_ignored", "");
                 channel.close();
                 return;
             }
@@ -1992,6 +2787,7 @@ public final class SessionService extends Service {
             } else {
                 maybeRecoverConnect(recoveryPeers);
             }
+            maybeStartInternetRecovery();
             scheduleRecoveryMaintenance();
         }, RECOVERY_RETRY_MS);
     }
@@ -2048,6 +2844,8 @@ public final class SessionService extends Service {
                     .putFloat("sound_threshold", soundThreshold)
                     .putFloat("output_volume", outputVolume)
                     .putBoolean("resume_authorized", resumeAuthorizedForSession)
+                    .putBoolean("route_mobile", sessionRouteMobile)
+                    .putString("recovery_room", ConnectionRoute.encodeRecoverySecret(recoverySecret))
                     .apply();
         } catch (Exception ignored) {}
     }
@@ -2104,6 +2902,11 @@ public final class SessionService extends Service {
                     p.getFloat("sound_threshold", 0.12f)));
             outputVolume = Math.max(0f, Math.min(1f,
                     p.getFloat("output_volume", 1.0f)));
+            sessionRouteMobile = p.getBoolean("route_mobile", false);
+            SessionBus.routeMobile = sessionRouteMobile;
+            SessionBus.sessionEstablishedOnce = true;
+            resetInternetRecoveryState();
+            recoverySecret = ConnectionRoute.decodeRecoverySecret(p.getString("recovery_room", ""));
 
             recoveryLocalVideoEnabled = localVideoEnabled;
             recoveryRemoteVideoEnabled = remoteVideoEnabled;
@@ -2132,6 +2935,8 @@ public final class SessionService extends Service {
             scheduleRecoveryMaintenance();
             startServiceWatchdog();
             persistRecoveryCheckpoint();
+            startNetworkWatch();
+            maybeStartInternetRecovery();
             return true;
         } catch (Exception e) {
             clearRecoveryCheckpoint();
@@ -2197,6 +3002,10 @@ public final class SessionService extends Service {
         try { if (pairingServerSocket != null) pairingServerSocket.close(); } catch (Exception ignored) {}
         stopOnlineRendezvous();
         internetControlRelay = false;
+        cancelInternetRecovery();
+        stopNetworkWatch();
+        releaseMobileNetwork();
+        sessionNetwork = null;
         stopRecoveryResources(true);
         stopRecoveryBeacon();
         releaseReliabilityLocks();
@@ -3009,6 +3818,7 @@ public final class SessionService extends Service {
         clearRecoveryCheckpoint();
         resumeAuthorizedForSession = false;
         recovering = false;
+        cancelInternetRecovery();
         stopRecoveryBeacon();
         ptt = false;
 
@@ -3018,12 +3828,16 @@ public final class SessionService extends Service {
             return;
         }
 
+        // Leaving the room drops messages still queued on the relay, so a relay
+        // session needs longer for the peer to collect the goodbye. Otherwise the
+        // other phone would see a lost call and try to reconnect.
+        boolean relaySession = internetControlRelay;
         AtomicBoolean finished = new AtomicBoolean(false);
         io.execute(() -> {
             try {
                 ch.sendControl("BYE_MANUAL|" + encodeName(deviceIdentity == null
                         ? android.os.Build.MODEL : deviceIdentity.deviceName()));
-                try { Thread.sleep(80L); } catch (InterruptedException ignored) {
+                try { Thread.sleep(relaySession ? RELAY_BYE_DRAIN_MS : 80L); } catch (InterruptedException ignored) {
                     Thread.currentThread().interrupt();
                 }
             } catch (Exception ignored) {}
@@ -3034,7 +3848,7 @@ public final class SessionService extends Service {
         // Never allow a dead peer to make the local Disconnect button hang.
         main.postDelayed(() -> {
             if (finished.compareAndSet(false, true)) stopSession("Disconnected");
-        }, 350L);
+        }, relaySession ? 1500L : 350L);
     }
 
     private void sendControl(String c) {
@@ -3044,7 +3858,7 @@ public final class SessionService extends Service {
                 try {
                     ch.sendControl(c);
                 } catch (Exception e) {
-                    if (!stopped.get() && established.get()) {
+                    if (!stopped.get() && established.get() && crypto == ch) {
                         handleConnectionLoss(peerLostReason("Connection lost"));
                     }
                 }
@@ -3177,6 +3991,13 @@ public final class SessionService extends Service {
         stopOnlineRendezvous();
         internetControlRelay = false;
         onlineConnecting.set(false);
+        cancelInternetRecovery();
+        stopNetworkWatch();
+        releaseMobileNetwork();
+        sessionNetwork = null;
+        mobileBootstrapToken = null;
+        sessionRouteMobile = false;
+        resetInternetRecoveryState();
         stopRecoveryResources(true);
         releaseReliabilityLocks();
         clearPendingNearby(true);
@@ -3215,6 +4036,7 @@ public final class SessionService extends Service {
     }
 
     @Override public void onDestroy() {
+        serviceDestroyed = true;
         if (!stopped.get()) {
             if (resumeAuthorizedForSession
                     && (established.get() || recovering || SessionBus.active)) {
@@ -3229,6 +4051,9 @@ public final class SessionService extends Service {
         }
         serviceWatchdogStarted.set(false);
         diagnosticsLoopStarted.set(false);
+        cancelInternetRecovery();
+        stopNetworkWatch();
+        releaseMobileNetwork();
         io.shutdownNow();
         super.onDestroy();
     }

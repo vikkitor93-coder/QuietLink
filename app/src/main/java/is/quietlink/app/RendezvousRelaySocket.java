@@ -1,5 +1,6 @@
 package is.quietlink.app;
 
+import android.net.Network;
 import android.util.Base64;
 
 import org.json.JSONObject;
@@ -38,6 +39,7 @@ final class RendezvousRelaySocket extends Socket {
     private final String localPeerToken;
     private final String remotePeerToken;
     private final InetAddress peerAddress;
+    private final Network network;
     private final RelayInputStream relayIn = new RelayInputStream();
     private final RelayOutputStream relayOut = new RelayOutputStream();
     private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -45,7 +47,7 @@ final class RendezvousRelaySocket extends Socket {
 
     RendezvousRelaySocket(String baseUrl, String roomToken,
                           String localPeerToken, String remotePeerToken,
-                          InetAddress peerAddress) throws IOException {
+                          InetAddress peerAddress, Network network) throws IOException {
         super();
         if (baseUrl == null || !baseUrl.startsWith("https://")) {
             throw new IOException("HTTPS relay URL required");
@@ -58,6 +60,7 @@ final class RendezvousRelaySocket extends Socket {
         this.localPeerToken = localPeerToken;
         this.remotePeerToken = remotePeerToken;
         this.peerAddress = peerAddress;
+        this.network = network;
     }
 
     @Override public InputStream getInputStream() throws IOException {
@@ -87,10 +90,11 @@ final class RendezvousRelaySocket extends Socket {
     @Override public boolean isConnected() { return !closed.get(); }
     @Override public boolean isClosed() { return closed.get(); }
 
-    @Override public synchronized void close() {
-        if (!closed.compareAndSet(false, true)) return;
-        try { relayIn.close(); } catch (Exception ignored) {}
-        try { relayOut.close(); } catch (Exception ignored) {}
+    @Override public void close() {
+        // The closed flag stops both streams. Their close() methods wait on the
+        // same locks as an HTTP call in progress, which could stall the caller
+        // (often the main thread) for the whole long poll.
+        closed.set(true);
     }
 
     private void ensureOpen() throws SocketException {
@@ -101,7 +105,10 @@ final class RendezvousRelaySocket extends Socket {
         ensureOpen();
         HttpURLConnection connection = null;
         try {
-            connection = (HttpURLConnection) new URL(baseUrl + path).openConnection();
+            URL url = new URL(baseUrl + path);
+            connection = (HttpURLConnection) (network != null
+                    ? network.openConnection(url)
+                    : url.openConnection());
             connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
             connection.setReadTimeout(Math.max(1000, readTimeoutMs));
             connection.setInstanceFollowRedirects(false);
@@ -118,6 +125,12 @@ final class RendezvousRelaySocket extends Socket {
             }
 
             int status = connection.getResponseCode();
+            if (status == HttpURLConnection.HTTP_NOT_FOUND
+                    || status == HttpURLConnection.HTTP_NOT_IMPLEMENTED) {
+                // A current server answers a missing peer with 409. These two mean
+                // the deployed server predates the relay endpoints.
+                throw new RelayUnavailableException();
+            }
             if (status < 200 || status >= 300) {
                 throw new IOException("Relay HTTP " + status);
             }
@@ -171,6 +184,8 @@ final class RendezvousRelaySocket extends Socket {
                 JSONObject response = post("/v1/relay-send", body, 4500);
                 if (response.optBoolean("ok", false)) return;
                 last = new IOException("Relay send rejected");
+            } catch (RelayUnavailableException e) {
+                throw e;
             } catch (IOException e) {
                 last = e;
             }
@@ -231,6 +246,8 @@ final class RendezvousRelaySocket extends Socket {
                 JSONObject response = post("/v1/relay-ack", body, 4500);
                 if (response.optBoolean("ok", false)) return;
                 last = new IOException("Relay ack rejected");
+            } catch (RelayUnavailableException e) {
+                throw e;
             } catch (IOException e) {
                 last = e;
             }
